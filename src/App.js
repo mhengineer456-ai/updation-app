@@ -335,6 +335,7 @@ function App() {
         return () => {
             stopLocationWatching();
         };
+        // eslint-disable-next-line react-hooks/exhaustive-deps
     }, []); // Empty dependency array prevents re-render loop
 
     // Component to display when conditions are not met

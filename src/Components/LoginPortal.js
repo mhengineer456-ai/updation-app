@@ -1,4 +1,25 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useCallback } from 'react';
+
+const GOOGLE_SHEETS_CONFIG = {
+  API_KEY: "AIzaSyAomDFBkOySlIxKWSKGHe6ATv9gvaBr7uk",
+  SPREADSEARCH_ID: "1iBDfsxA9XEC9nhQE-ALBYlyGRZWOaCYvWsnGfYYbr1I",
+  SPREADSHEET_ID: "1iBDfsxA9XEC9nhQE-ALBYlyGRZWOaCYvWsnGfYYbr1I",
+  RANGE: "StitchingSupervisors!A:F",
+};
+
+// Full suite of production departments for manufacturing
+const PRODUCTION_DEPARTMENTS = [
+  'Feed Up',
+  'Jaybir (KajButton, Printing, Embroidery)',
+  'Elastic',
+  'Bone',
+  'Washing',
+  'Folding',
+  'KajButton',
+  'Overlock',
+  'Jaybir Printing',
+  'Jaybir Embroidery'
+];
 
 const LoginPortal = ({ onLoginSuccess }) => {
   const [selectedDept, setSelectedDept] = useState('');
@@ -11,18 +32,7 @@ const LoginPortal = ({ onLoginSuccess }) => {
   const [sheetData, setSheetData] = useState([]);
   const [loadingUsers, setLoadingUsers] = useState(true);
 
-  const GOOGLE_SHEETS_CONFIG = {
-    API_KEY: "AIzaSyAomDFBkOySlIxKWSKGHe6ATv9gvaBr7uk",
-    SPREADSEARCH_ID: "1iBDfsxA9XEC9nhQE-ALBYlyGRZWOaCYvWsnGfYYbr1I",
-    SPREADSHEET_ID: "1iBDfsxA9XEC9nhQE-ALBYlyGRZWOaCYvWsnGfYYbr1I",
-    RANGE: "StitchingSupervisors!A:F",
-  };
-
-  useEffect(() => {
-    loadUsersFromGoogleSheets();
-  }, []);
-
-  const loadUsersFromGoogleSheets = async () => {
+  const loadUsersFromGoogleSheets = useCallback(async () => {
     try {
       setLoadingUsers(true);
       setError('');
@@ -61,21 +71,11 @@ const LoginPortal = ({ onLoginSuccess }) => {
     } finally {
       setLoadingUsers(false);
     }
-  };
+  }, []);
 
-  // Full suite of production departments for manufacturing
-  const PRODUCTION_DEPARTMENTS = [
-    'Feed Up',
-    'Jaybir (KajButton, Printing, Embroidery)',
-    'Elastic',
-    'Bone',
-    'Washing',
-    'Folding',
-    'KajButton',
-    'Overlock',
-    'Jaybir Printing',
-    'Jaybir Embroidery'
-  ];
+  useEffect(() => {
+    loadUsersFromGoogleSheets();
+  }, [loadUsersFromGoogleSheets]);
 
   // Built-in department supervisor profiles (matches floor sheets & Google Sheet PINs)
   const BUILTIN_SUPERVISORS = useMemo(() => [
@@ -135,7 +135,7 @@ const LoginPortal = ({ onLoginSuccess }) => {
     const targetDept = selectedDept.trim().toLowerCase();
 
     // Jaybir multi-department selector
-    if (targetDept.includes('jaybir') && (targetDept.includes('kajbutton') || !targetDept.includes('print') && !targetDept.includes('embroid'))) {
+    if (targetDept.includes('jaybir') && (targetDept.includes('kajbutton') || (!targetDept.includes('print') && !targetDept.includes('embroid')))) {
       return combinedSupervisors.filter(u => u.name.toLowerCase().includes('jaybir'));
     }
 

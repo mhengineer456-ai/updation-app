@@ -587,7 +587,6 @@ const Dashboard = ({ user, onLogout }) => {
         }, lot.completeHistory[0]);
       }
 
-      const wipTime = latestWip && (latestWip.timestamp || latestWip.date) ? new Date(latestWip.timestamp || latestWip.date).getTime() : 0;
       const compTime = latestComplete && (latestComplete.timestamp || latestComplete.date) ? new Date(latestComplete.timestamp || latestComplete.date).getTime() : 0;
 
       // Check explicit REOPEN columns from Google Sheets
@@ -831,7 +830,7 @@ const Dashboard = ({ user, onLogout }) => {
     });
     
     return filtered;
-  }, [activeLots, completedLots, supervisorFilteredLots, filters, getDaysElapsed]);
+  }, [activeLots, completedLots, supervisorFilteredLots, filters, getLotDaysElapsed]);
 
   // Update status via Apps Script
   const updateStatusSubmit = async (statusType, lotNumber, status, remarks) => {
