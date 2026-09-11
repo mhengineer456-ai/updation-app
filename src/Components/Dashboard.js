@@ -3,7 +3,8 @@ import React, { useState, useEffect, useMemo, useCallback } from 'react';
 // Google Sheets API Configuration
 const SPREADSHEET_ID = '1IMhmYlJ3s2PPRgEQs1Ikd4O1OBXK4EYL1oV_-kWAkyg';
 const API_KEY = 'AIzaSyAomDFBkOySlIxKWSKGHe6ATv9gvaBr7uk';
-const APP_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbwHsIchoju6HtUQR1vKPyvS6V8qXhSCU4GUQ-vGlxrLg1fBaRf-wxVHeDAZfHBaTWLMVQ/exec";
+const APP_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbxS6Z3HUfnxFnzp9SAqhIKiXPmVAKwxhMqTbgGQ2s9gtU8joJuaIl8T3TjGrQuPBy_mkw/exec";
+
 
 // Department / Sheet Definitions (Full Multi-Department Support)
 const DEPARTMENTS = [
@@ -203,9 +204,9 @@ const getDeptIdForUser = (userObj) => {
   if (dept.includes('print')) return 'printing';
   if (dept.includes('embroid')) return 'embroidery';
   if (dept.includes('kaj') || dept.includes('button')) return 'kajbutton';
-  const match = DEPARTMENTS.find(d => 
-    d.id === dept || 
-    d.name.toLowerCase().includes(dept) || 
+  const match = DEPARTMENTS.find(d =>
+    d.id === dept ||
+    d.name.toLowerCase().includes(dept) ||
     d.shortName.toLowerCase() === dept
   );
   return match ? match.id : 'feedup';
@@ -220,17 +221,17 @@ const getDeptIdForUser = (userObj) => {
 // Folding -> Only Folding
 const getAccessibleDepartments = (userObj) => {
   if (!userObj) return DEPARTMENTS;
-  
+
   const userName = (userObj.name || '').toLowerCase().trim();
   const userDept = (userObj.department || '').toLowerCase().trim();
   const userRole = (userObj.role || '').toLowerCase().trim();
-  
+
   // Admin / Manager / All departments
   if (
-    userRole === 'admin' || 
-    userRole === 'manager' || 
-    userDept === 'all' || 
-    userDept.includes('all') || 
+    userRole === 'admin' ||
+    userRole === 'manager' ||
+    userDept === 'all' ||
+    userDept.includes('all') ||
     userDept.includes('production')
   ) {
     return DEPARTMENTS;
@@ -238,16 +239,16 @@ const getAccessibleDepartments = (userObj) => {
 
   // Jaybir manages KajButton, Jaybir Printing, and Jaybir Embroidery
   if (
-    userName.includes('jaybir') || 
-    userDept.includes('jaybir') || 
-    userDept.includes('kaj') || 
-    userDept.includes('button') || 
-    userDept.includes('print') || 
+    userName.includes('jaybir') ||
+    userDept.includes('jaybir') ||
+    userDept.includes('kaj') ||
+    userDept.includes('button') ||
+    userDept.includes('print') ||
     userDept.includes('embroid')
   ) {
     return DEPARTMENTS.filter(d => ['kajbutton', 'printing', 'embroidery'].includes(d.id));
   }
-  
+
   // Feed Up Department Supervisor (only Feed Up lots)
   if (userDept.includes('feed') || userName.includes('feed') || userName.includes('mohan')) {
     return DEPARTMENTS.filter(d => d.id === 'feedup');
@@ -257,35 +258,35 @@ const getAccessibleDepartments = (userObj) => {
   if (userDept.includes('elastic') || userName.includes('elastic')) {
     return DEPARTMENTS.filter(d => d.id === 'elastic');
   }
-  
+
   // Bone Department Supervisor (only Bone lots)
   if (userDept.includes('bone') || userName.includes('bone')) {
     return DEPARTMENTS.filter(d => d.id === 'bone');
   }
-  
+
   // Washing Department Supervisor (only Washing lots)
   if (userDept.includes('wash') || userName.includes('wash')) {
     return DEPARTMENTS.filter(d => d.id === 'washing');
   }
-  
+
   // Folding Department Supervisor (only Folding lots)
   if (userDept.includes('fold') || userName.includes('fold')) {
     return DEPARTMENTS.filter(d => d.id === 'folding');
   }
-  
+
   // Overlock Department Supervisor (only Overlock lots)
   if (userDept.includes('overlock') || userDept.includes('ovelock') || userName.includes('overlock')) {
     return DEPARTMENTS.filter(d => d.id === 'overlock');
   }
-  
+
   // Generic match
-  const matched = DEPARTMENTS.filter(d => 
-    d.id === userDept || 
+  const matched = DEPARTMENTS.filter(d =>
+    d.id === userDept ||
     d.name.toLowerCase().includes(userDept) ||
     d.shortName.toLowerCase() === userDept
   );
   if (matched.length > 0) return matched;
-  
+
   // Default to DEPARTMENTS if nothing matches
   return DEPARTMENTS;
 };
@@ -386,7 +387,7 @@ const Dashboard = ({ user, onLogout }) => {
   const [loading, setLoading] = useState(true);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [error, setError] = useState('');
-  
+
   // Supervisor view toggle: 'my' (assigned to current user) or 'all'
   const [viewScope, setViewScope] = useState('my');
 
@@ -396,7 +397,7 @@ const Dashboard = ({ user, onLogout }) => {
     sortBy: 'date',
     sortOrder: 'desc',
   });
-  
+
   const [expandedRows, setExpandedRows] = useState({});
 
   // Status update bottom sheet modal state
@@ -476,10 +477,10 @@ const Dashboard = ({ user, onLogout }) => {
 
   const transformSheetData = useCallback((sheetData, dept) => {
     if (!sheetData || sheetData.length === 0) return [];
-    
+
     const headers = sheetData[0].map(h => h.trim());
     const rows = sheetData.slice(1);
-    
+
     return rows.map((row, index) => {
       const lot = {};
       headers.forEach((header, colIndex) => {
@@ -487,7 +488,7 @@ const Dashboard = ({ user, onLogout }) => {
           lot[header] = row[colIndex] || '';
         }
       });
-      
+
       lot.id = `${dept.id}-lot-${index}`;
       lot.deptId = dept.id;
       lot.deptName = dept.name;
@@ -504,7 +505,7 @@ const Dashboard = ({ user, onLogout }) => {
       lot.totalManpower = findColumnValue(lot, ['Total Manpower', 'Manpower', 'MANPOWER', 'TOTAL MANPOWER']) || '0';
       lot.selectedColors = findColumnValue(lot, ['Selected Colors', 'SelectedColors', 'Colors', 'COLORS']) || '';
       lot.stitchingSupervisor = findColumnValue(lot, ['Stiching Supervisor', 'Stitching Supervisor', 'STITCHING SUPERVISOR']) || '';
-      
+
       // Parse Processes from sheet (Column 'Process', 'Processes', etc.)
       const rawProcess = findColumnValue(lot, [
         'Process', 'Processes', 'PROCESS', 'PROCESSES', 'Process Name', 'PROCESS NAME', 'Operation', 'OPERATIONS'
@@ -528,10 +529,10 @@ const Dashboard = ({ user, onLogout }) => {
       } else {
         lot.processList = [];
       }
-      
+
       lot.supervisor = findColumnValue(lot, dept.supervisorKeys) || 'Not Assigned';
       lot.operationDate = findColumnValue(lot, dept.dateKeys) || lot['Timestamp'] || '';
-      
+
       // Parse WIP history
       const wipRaw = findColumnValue(lot, dept.wipKeys);
       try {
@@ -543,7 +544,7 @@ const Dashboard = ({ user, onLogout }) => {
       } catch {
         lot.wipHistory = [];
       }
-      
+
       // Parse Complete history
       const completeRaw = findColumnValue(lot, dept.completeKeys);
       try {
@@ -555,7 +556,7 @@ const Dashboard = ({ user, onLogout }) => {
       } catch {
         lot.completeHistory = [];
       }
-      
+
       const hasWip = lot.wipHistory && lot.wipHistory.length > 0;
       const hasComplete = lot.completeHistory && lot.completeHistory.length > 0;
 
@@ -566,7 +567,7 @@ const Dashboard = ({ user, onLogout }) => {
       ]);
 
       let completionDate = explicitCompletionDate || '';
-      
+
       // Find latest WIP entry by timestamp
       let latestWip = null;
       if (hasWip) {
@@ -595,7 +596,7 @@ const Dashboard = ({ user, onLogout }) => {
       const reopenProcessColVal = (findColumnValue(lot, ['REOPEN FOR WHICH PROCESS', 'Reopen For Which Process', 'reopenForWhichProcess', 'reopenProcess']) || '').toString().trim();
 
       // Look specifically for a reopen event in WIP history
-      const latestReopenEntry = (lot.wipHistory || []).find(item => 
+      const latestReopenEntry = (lot.wipHistory || []).find(item =>
         item && (item.action === 'reopen' || (item.status && item.status.toString().toLowerCase().includes('reopen')))
       );
       const reopenTime = latestReopenEntry && (latestReopenEntry.timestamp || latestReopenEntry.date)
@@ -662,7 +663,7 @@ const Dashboard = ({ user, onLogout }) => {
       }
 
       lot.completionDate = completionDate;
-      
+
       return lot;
     });
   }, []);
@@ -672,21 +673,21 @@ const Dashboard = ({ user, onLogout }) => {
     try {
       if (showRefreshing) setIsRefreshing(true);
       setError('');
-      
+
       const url = `https://sheets.googleapis.com/v4/spreadsheets/${SPREADSHEET_ID}/values/${encodeURIComponent(dept.sheetName)}?key=${API_KEY}`;
       const response = await fetch(url);
-      
+
       if (!response.ok) {
         throw new Error(`Failed to load ${dept.name}: ${response.status}`);
       }
-      
+
       const data = await response.json();
       if (!data.values || !Array.isArray(data.values)) {
         throw new Error(`Invalid format for ${dept.name}`);
       }
-      
+
       const transformedLots = transformSheetData(data.values, dept);
-      
+
       setDeptData(prev => ({
         ...prev,
         [dept.id]: {
@@ -744,21 +745,21 @@ const Dashboard = ({ user, onLogout }) => {
     let inProgress = 0;
     let pending = 0;
     let redZone = 0;
-    
+
     supervisorFilteredLots.forEach(lot => {
       if (lot.isCompleted) {
         completed++;
       } else {
         if (lot.isInProgress) inProgress++;
         else pending++;
-        
+
         const days = getLotDaysElapsed(lot);
         if (days !== null && days > 7) {
           redZone++;
         }
       }
     });
-    
+
     return {
       total: supervisorFilteredLots.length,
       completed,
@@ -788,10 +789,10 @@ const Dashboard = ({ user, onLogout }) => {
     } else {
       filtered = [...activeLots];
     }
-    
+
     if (filters.search) {
       const q = filters.search.toLowerCase();
-      filtered = filtered.filter(lot => 
+      filtered = filtered.filter(lot =>
         lot.lotNumber.toLowerCase().includes(q) ||
         lot.style.toLowerCase().includes(q) ||
         lot.brand.toLowerCase().includes(q) ||
@@ -800,7 +801,7 @@ const Dashboard = ({ user, onLogout }) => {
         (lot.processes && lot.processes.toLowerCase().includes(q))
       );
     }
-    
+
     filtered.sort((a, b) => {
       let aValue, bValue;
       switch (filters.sortBy) {
@@ -824,11 +825,11 @@ const Dashboard = ({ user, onLogout }) => {
           aValue = a.lotNumber;
           bValue = b.lotNumber;
       }
-      return filters.sortOrder === 'desc' 
-        ? (bValue > aValue ? 1 : -1) 
+      return filters.sortOrder === 'desc'
+        ? (bValue > aValue ? 1 : -1)
         : (aValue > bValue ? 1 : -1);
     });
-    
+
     return filtered;
   }, [activeLots, completedLots, supervisorFilteredLots, filters, getLotDaysElapsed]);
 
@@ -836,7 +837,7 @@ const Dashboard = ({ user, onLogout }) => {
   const updateStatusSubmit = async (statusType, lotNumber, status, remarks) => {
     setIsUpdating(true);
     setUpdateMessage({ type: '', text: '' });
-    
+
     try {
       const finalStatus = status === 'Other' ? customStatus : status;
       if (status === 'Other' && !customStatus.trim()) {
@@ -844,7 +845,7 @@ const Dashboard = ({ user, onLogout }) => {
         setIsUpdating(false);
         return;
       }
-      
+
       const actionName = activeDept.updateAction || 'updateKajButtonStatus';
       const params = new URLSearchParams({
         action: actionName,
@@ -856,9 +857,9 @@ const Dashboard = ({ user, onLogout }) => {
         remarks: remarks || '',
         supervisor: user?.name || 'Dashboard User'
       });
-      
+
       const url = `${APP_SCRIPT_URL}?${params.toString()}`;
-      
+
       let resData = null;
       try {
         const response = await fetch(url);
@@ -867,7 +868,7 @@ const Dashboard = ({ user, onLogout }) => {
         // Fallback for environments with strict opaque redirect rules
         await fetch(url, { method: 'GET', mode: 'no-cors' });
       }
-      
+
       if (resData && resData.ok === false) {
         setUpdateMessage({
           type: 'error',
@@ -876,12 +877,12 @@ const Dashboard = ({ user, onLogout }) => {
         setIsUpdating(false);
         return;
       }
-      
+
       setUpdateMessage({
         type: 'success',
         text: (resData && resData.message) || `Status updated for Lot #${lotNumber}! Syncing...`
       });
-      
+
       setTimeout(() => {
         fetchDeptData(activeDept, false);
         setUpdateModal(null);
@@ -909,8 +910,8 @@ const Dashboard = ({ user, onLogout }) => {
     setUpdateModal({ lot });
     setUpdateStatusType(type);
     setUpdateStatus(
-      type === 'complete' 
-        ? activeDept.completeOptions[0] 
+      type === 'complete'
+        ? activeDept.completeOptions[0]
         : activeDept.wipOptions[0]
     );
     setUpdateRemarks('');
@@ -918,53 +919,53 @@ const Dashboard = ({ user, onLogout }) => {
     setUpdateMessage({ type: '', text: '' });
   };
 
-// Helper for equating process synonyms (e.g. 'Kaj Mohri' == 'Mohri Kaj', 'BalTag' == 'Baltach', 'Kaj Belt' == 'Belt')
-const getCanonicalProcess = (name) => {
-  if (!name) return '';
-  const clean = name.toString().trim().toLowerCase().replace(/[^a-z0-9]/g, '');
-  if ((clean.includes('kaj') && clean.includes('mohri')) || clean === 'kajmohri' || clean === 'mohrikaj') {
-    return 'kajmohri';
-  }
-  if (clean.includes('balt') || clean.includes('bart') || clean === 'baltag' || clean === 'baltach') {
-    return 'baltach';
-  }
-  if (clean === 'kajbelt' || clean === 'beltkaj' || clean === 'belt') {
-    return 'kajbelt';
-  }
-  if (clean === 'kajbutton' || clean === 'buttonkaj' || clean === 'kaj') {
-    return 'kajbutton';
-  }
-  if (clean.includes('titch')) {
-    return 'titchbutton';
-  }
-  if (clean.includes('eyelet')) {
-    return 'eyelet';
-  }
-  if (clean.includes('pasting')) {
-    return 'pasting';
-  }
-  if (clean.includes('sticker')) {
-    return 'sticker';
-  }
-  if (clean.includes('down') && clean.includes('part')) {
-    return 'downpart';
-  }
-  return clean;
-};
+  // Helper for equating process synonyms (e.g. 'Kaj Mohri' == 'Mohri Kaj', 'BalTag' == 'Baltach', 'Kaj Belt' == 'Belt')
+  const getCanonicalProcess = (name) => {
+    if (!name) return '';
+    const clean = name.toString().trim().toLowerCase().replace(/[^a-z0-9]/g, '');
+    if ((clean.includes('kaj') && clean.includes('mohri')) || clean === 'kajmohri' || clean === 'mohrikaj') {
+      return 'kajmohri';
+    }
+    if (clean.includes('balt') || clean.includes('bart') || clean === 'baltag' || clean === 'baltach') {
+      return 'baltach';
+    }
+    if (clean === 'kajbelt' || clean === 'beltkaj' || clean === 'belt') {
+      return 'kajbelt';
+    }
+    if (clean === 'kajbutton' || clean === 'buttonkaj' || clean === 'kaj') {
+      return 'kajbutton';
+    }
+    if (clean.includes('titch')) {
+      return 'titchbutton';
+    }
+    if (clean.includes('eyelet')) {
+      return 'eyelet';
+    }
+    if (clean.includes('pasting')) {
+      return 'pasting';
+    }
+    if (clean.includes('sticker')) {
+      return 'sticker';
+    }
+    if (clean.includes('down') && clean.includes('part')) {
+      return 'downpart';
+    }
+    return clean;
+  };
 
-const areProcessesEquivalent = (p1, p2) => {
-  if (!p1 || !p2) return false;
-  const c1 = getCanonicalProcess(p1);
-  const c2 = getCanonicalProcess(p2);
-  if (c1 && c2 && c1 === c2) return true;
-  const words1 = p1.toString().toLowerCase().split(/[\s\-_]+/).filter(Boolean).sort().join(' ');
-  const words2 = p2.toString().toLowerCase().split(/[\s\-_]+/).filter(Boolean).sort().join(' ');
-  return words1 === words2;
-};
+  const areProcessesEquivalent = (p1, p2) => {
+    if (!p1 || !p2) return false;
+    const c1 = getCanonicalProcess(p1);
+    const c2 = getCanonicalProcess(p2);
+    if (c1 && c2 && c1 === c2) return true;
+    const words1 = p1.toString().toLowerCase().split(/[\s\-_]+/).filter(Boolean).sort().join(' ');
+    const words2 = p2.toString().toLowerCase().split(/[\s\-_]+/).filter(Boolean).sort().join(' ');
+    return words1 === words2;
+  };
 
   const openReopenModal = (lot) => {
     setReopenModal({ lot });
-    const availableDeptOpt = activeDept.wipOptions.find(o => 
+    const availableDeptOpt = activeDept.wipOptions.find(o =>
       o !== 'Other' && !(lot.processList || []).some(p => areProcessesEquivalent(p, o))
     );
     setReopenProcess(availableDeptOpt || '');
@@ -1122,17 +1123,17 @@ const areProcessesEquivalent = (p1, p2) => {
             </div>
           </div>
 
-          <button 
-            onClick={handleRefresh} 
+          <button
+            onClick={handleRefresh}
             disabled={isRefreshing}
             style={styles.refreshBtn}
             title="Refresh Data"
             aria-label="Refresh lots"
           >
-            <svg 
-              width="16" 
-              height="16" 
-              viewBox="0 0 24 24" 
+            <svg
+              width="16"
+              height="16"
+              viewBox="0 0 24 24"
               fill="none"
               style={{
                 animation: isRefreshing ? 'spin 0.8s linear infinite' : 'none'
@@ -1155,7 +1156,7 @@ const areProcessesEquivalent = (p1, p2) => {
             {accessibleDepts.map((dept) => {
               const isActive = dept.id === activeDeptId;
               const count = deptData[dept.id]?.allLots?.length;
-              
+
               return (
                 <button
                   key={dept.id}
@@ -1216,7 +1217,7 @@ const areProcessesEquivalent = (p1, p2) => {
               style={styles.searchInput}
             />
             {filters.search && (
-              <button 
+              <button
                 onClick={() => setFilters(f => ({ ...f, search: '' }))}
                 style={styles.searchClearBtn}
               >
@@ -1228,11 +1229,11 @@ const areProcessesEquivalent = (p1, p2) => {
           {/* Modern KPI Stats Carousel / Stat Pills */}
           <div style={styles.statsPillRow}>
             {/* Total Lots */}
-            <div 
+            <div
               onClick={() => setFilters(f => ({ ...f, status: f.status === 'all-lots' ? 'all' : 'all-lots' }))}
-              style={{ 
-                ...styles.statPillCard, 
-                backgroundColor: '#eff6ff', 
+              style={{
+                ...styles.statPillCard,
+                backgroundColor: '#eff6ff',
                 border: filters.status === 'all-lots' ? '2px solid #2563eb' : '1px solid #bfdbfe',
                 boxShadow: filters.status === 'all-lots' ? '0 3px 10px rgba(37, 99, 235, 0.25)' : '0 2px 6px rgba(37, 99, 235, 0.04)',
                 cursor: 'pointer'
@@ -1252,11 +1253,11 @@ const areProcessesEquivalent = (p1, p2) => {
             </div>
 
             {/* WIP / Active */}
-            <div 
+            <div
               onClick={() => setFilters(f => ({ ...f, status: f.status === 'in-progress' ? 'all' : 'in-progress' }))}
-              style={{ 
-                ...styles.statPillCard, 
-                backgroundColor: '#fffbeb', 
+              style={{
+                ...styles.statPillCard,
+                backgroundColor: '#fffbeb',
                 border: filters.status === 'in-progress' ? '2px solid #d97706' : '1px solid #fde68a',
                 boxShadow: filters.status === 'in-progress' ? '0 3px 10px rgba(217, 119, 6, 0.25)' : '0 2px 6px rgba(217, 119, 6, 0.04)',
                 cursor: 'pointer'
@@ -1276,11 +1277,11 @@ const areProcessesEquivalent = (p1, p2) => {
             </div>
 
             {/* Completed */}
-            <div 
+            <div
               onClick={() => setFilters(f => ({ ...f, status: f.status === 'completed' ? 'all' : 'completed' }))}
-              style={{ 
-                ...styles.statPillCard, 
-                backgroundColor: '#ecfdf5', 
+              style={{
+                ...styles.statPillCard,
+                backgroundColor: '#ecfdf5',
                 border: filters.status === 'completed' ? '2px solid #059669' : '1px solid #a7f3d0',
                 boxShadow: filters.status === 'completed' ? '0 3px 10px rgba(5, 150, 105, 0.25)' : '0 2px 6px rgba(5, 150, 105, 0.04)',
                 cursor: 'pointer'
@@ -1301,14 +1302,14 @@ const areProcessesEquivalent = (p1, p2) => {
 
             {/* Red Zone (> 7 Days) */}
             {stats.redZone > 0 && (
-              <div 
+              <div
                 onClick={() => setFilters(f => ({ ...f, status: f.status === 'red-zone' ? 'all' : 'red-zone' }))}
-                style={{ 
-                  ...styles.statPillCard, 
-                  backgroundColor: '#fef2f2', 
+                style={{
+                  ...styles.statPillCard,
+                  backgroundColor: '#fef2f2',
                   border: filters.status === 'red-zone' ? '2px solid #dc2626' : '1px solid #fecaca',
                   boxShadow: filters.status === 'red-zone' ? '0 3px 10px rgba(220, 38, 38, 0.25)' : '0 2px 6px rgba(220, 38, 38, 0.04)',
-                  cursor: 'pointer' 
+                  cursor: 'pointer'
                 }}
                 className="touch-press"
                 title="Click to view delayed lots (> 7 days)"
@@ -1376,7 +1377,7 @@ const areProcessesEquivalent = (p1, p2) => {
                 onClick={() => setFilters(f => ({ ...f, status: 'red-zone' }))}
                 style={{
                   ...styles.statusChipBtn,
-                  ...(filters.status === 'red-zone' 
+                  ...(filters.status === 'red-zone'
                     ? { backgroundColor: '#dc2626', border: '1px solid #dc2626', color: '#ffffff', fontWeight: '700' }
                     : { backgroundColor: '#fef2f2', border: '1px solid #fecaca', color: '#dc2626', fontWeight: '700' }
                   )
@@ -1429,17 +1430,17 @@ const areProcessesEquivalent = (p1, p2) => {
                 {filters.status === 'completed'
                   ? `No Completed ${activeDept.shortName} Lots`
                   : stats.activeLots === 0 && stats.completed > 0
-                  ? `All ${activeDept.shortName} Lots Completed!`
-                  : `No ${activeDept.shortName} lots found`}
+                    ? `All ${activeDept.shortName} Lots Completed!`
+                    : `No ${activeDept.shortName} lots found`}
               </h3>
               <p style={styles.emptyDesc}>
-                {filters.search 
-                  ? 'No lots match your search query.' 
+                {filters.search
+                  ? 'No lots match your search query.'
                   : filters.status === 'completed'
-                  ? `There are no completed lots recorded in ${activeDept.name} yet.`
-                  : stats.activeLots === 0 
-                  ? `All ${completedLots.length} assigned lots in ${activeDept.name} are complete.`
-                  : `No pending lots in ${activeDept.name}.`}
+                    ? `There are no completed lots recorded in ${activeDept.name} yet.`
+                    : stats.activeLots === 0
+                      ? `All ${completedLots.length} assigned lots in ${activeDept.name} are complete.`
+                      : `No pending lots in ${activeDept.name}.`}
               </p>
             </div>
           ) : (
@@ -1450,8 +1451,8 @@ const areProcessesEquivalent = (p1, p2) => {
               const isRedZone = !lot.isCompleted && daysElapsed !== null && daysElapsed > 7;
 
               return (
-                <article 
-                  key={lot.id} 
+                <article
+                  key={lot.id}
                   style={{
                     ...styles.card,
                     ...(isRedZone ? styles.cardRedZone : {})
@@ -1483,8 +1484,8 @@ const areProcessesEquivalent = (p1, p2) => {
                         </span>
                       )}
                       {lot.isReopened && (
-                        <span 
-                          style={styles.reopenedBadge} 
+                        <span
+                          style={styles.reopenedBadge}
                           title={`${lot.reopenDate ? `Reopened on ${lot.reopenDate} for ` : 'Reopened for '}${lot.reopenProcess || 'Pending'}`}
                         >
                           ↺ Reopened{lot.reopenProcess ? `: ${lot.reopenProcess}` : ''}
@@ -1500,7 +1501,7 @@ const areProcessesEquivalent = (p1, p2) => {
                           border: `1px solid ${isRedZone ? '#b91c1c' : lot.isCompleted ? '#a7f3d0' : daysElapsed > 5 ? '#fecaca' : daysElapsed > 2 ? '#fde68a' : '#bfdbfe'}`,
                           color: isRedZone ? '#ffffff' : lot.isCompleted ? '#065f46' : daysElapsed > 5 ? '#dc2626' : daysElapsed > 2 ? '#b45309' : '#1d4ed8',
                           fontWeight: '800'
-                        }} title={lot.isCompleted 
+                        }} title={lot.isCompleted
                           ? `Completed in ${daysElapsed} day(s) (Formula: ${formatDate(lot.completionDate || 'N/A')} - ${formatDate(lot.operationDate)}).`
                           : `Issued on ${formatDate(lot.operationDate)}. Running for ${daysElapsed} day(s) (Formula: Today - Issue Date).`}>
                           <svg width="11" height="11" viewBox="0 0 24 24" fill="none">
@@ -1547,8 +1548,8 @@ const areProcessesEquivalent = (p1, p2) => {
                       </div>
                       <div style={styles.processChipsWrap}>
                         {lot.processList.map((proc, pIdx) => (
-                          <span 
-                            key={pIdx} 
+                          <span
+                            key={pIdx}
                             style={styles.processChip}
                             onClick={(e) => {
                               e.stopPropagation();
@@ -1593,10 +1594,10 @@ const areProcessesEquivalent = (p1, p2) => {
                     </div>
 
                     <div style={styles.specChevronBox}>
-                      <svg 
-                        width="14" 
-                        height="14" 
-                        viewBox="0 0 24 24" 
+                      <svg
+                        width="14"
+                        height="14"
+                        viewBox="0 0 24 24"
                         fill="none"
                         style={{
                           transform: isExpanded ? 'rotate(180deg)' : 'rotate(0deg)',
@@ -1715,7 +1716,7 @@ const areProcessesEquivalent = (p1, p2) => {
                   <div style={styles.cardActions}>
                     {lot.isCompleted ? (
                       <>
-                        <button 
+                        <button
                           onClick={() => openReopenModal(lot)}
                           style={styles.actionBtnReopen}
                           className="touch-press"
@@ -1736,7 +1737,7 @@ const areProcessesEquivalent = (p1, p2) => {
                       </>
                     ) : (
                       <>
-                        <button 
+                        <button
                           onClick={() => openUpdateModal(lot, 'wip')}
                           style={styles.actionBtnWip}
                           className="touch-press"
@@ -1746,8 +1747,8 @@ const areProcessesEquivalent = (p1, p2) => {
                           </svg>
                           <span>Update WIP</span>
                         </button>
-                        
-                        <button 
+
+                        <button
                           onClick={() => openUpdateModal(lot, 'complete')}
                           style={styles.actionBtnComplete}
                           className="touch-press"
@@ -1762,10 +1763,10 @@ const areProcessesEquivalent = (p1, p2) => {
 
                     <button
                       onClick={() => {
-                        const daysText = daysElapsed !== null 
-                          ? lot.isCompleted 
-                            ? `Completed in ${daysElapsed} day(s)` 
-                            : (daysElapsed === 0 ? 'Today (Day 1)' : `${daysElapsed} day(s)`) 
+                        const daysText = daysElapsed !== null
+                          ? lot.isCompleted
+                            ? `Completed in ${daysElapsed} day(s)`
+                            : (daysElapsed === 0 ? 'Today (Day 1)' : `${daysElapsed} day(s)`)
                           : 'N/A';
                         const compText = lot.isCompleted && lot.completionDate ? `\n*Completion Date:* ${formatDate(lot.completionDate)}` : '';
                         const procText = lot.processes ? `\n*Processes:* ${lot.processes}` : '';
@@ -1779,7 +1780,7 @@ const areProcessesEquivalent = (p1, p2) => {
                       aria-label="Share lot to WhatsApp"
                     >
                       <svg width="15" height="15" viewBox="0 0 24 24" fill="none">
-                        <path d="M8.684 13.342C8.886 12.938 9 12.482 9 12c0-.482-.114-.938-.316-1.342m0 2.684a3 3 0 110-2.684m0 2.684l6.632 3.316m-6.632-6l6.632-3.316m0 0a3 3 0 105.367-2.684 3 3 0 00-5.367 2.684zm0 9.316a3 3 0 105.368 2.684 3 3 0 00-5.368-2.684z" stroke="#2563eb" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+                        <path d="M8.684 13.342C8.886 12.938 9 12.482 9 12c0-.482-.114-.938-.316-1.342m0 2.684a3 3 0 110-2.684m0 2.684l6.632 3.316m-6.632-6l6.632-3.316m0 0a3 3 0 105.367-2.684 3 3 0 00-5.367 2.684zm0 9.316a3 3 0 105.368 2.684 3 3 0 00-5.368-2.684z" stroke="#2563eb" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
                       </svg>
                     </button>
                   </div>
@@ -1799,15 +1800,15 @@ const areProcessesEquivalent = (p1, p2) => {
             <div style={styles.sheetHead}>
               <div>
                 <h3 style={styles.sheetTitle}>
-                  {updateStatusType === 'complete' 
-                    ? `Mark ${activeDept.shortName} Complete` 
+                  {updateStatusType === 'complete'
+                    ? `Mark ${activeDept.shortName} Complete`
                     : `Update ${activeDept.shortName} WIP`}
                 </h3>
                 <span style={styles.sheetSubtitle}>
                   Lot #{updateModal.lot.lotNumber} • {updateModal.lot.garmentType} ({updateModal.lot.totalPcs} Pcs)
                 </span>
               </div>
-              <button 
+              <button
                 onClick={() => !isUpdating && setUpdateModal(null)}
                 style={styles.sheetClose}
               >
@@ -1867,10 +1868,10 @@ const areProcessesEquivalent = (p1, p2) => {
               )}
 
               <label style={styles.sheetLabel}>Select Status</label>
-              
+
               <div style={styles.pillOptionsGrid}>
-                {(updateStatusType === 'complete' 
-                  ? activeDept.completeOptions 
+                {(updateStatusType === 'complete'
+                  ? activeDept.completeOptions
                   : activeDept.wipOptions
                 ).map((opt) => {
                   const isSelected = updateStatus === opt;
@@ -1962,7 +1963,7 @@ const areProcessesEquivalent = (p1, p2) => {
                   </span>
                 </div>
               </div>
-              <button 
+              <button
                 onClick={() => !isReopening && setReopenModal(null)}
                 style={styles.sheetClose}
               >
@@ -2184,19 +2185,19 @@ const areProcessesEquivalent = (p1, p2) => {
           })
         ) : (
           /* Single Department (e.g. Elastic, Bone, Washing, Folding) */
-          <button 
+          <button
             style={{
               ...styles.bottomBarItem,
               ...styles.bottomBarItemActive
-            }} 
+            }}
             onClick={() => {
               window.scrollTo({ top: 0, behavior: 'smooth' });
             }}
             className="touch-press"
           >
             {renderDeptIcon(activeDept.id, '#2563eb')}
-            <span style={{ 
-              ...styles.bottomBarLabel, 
+            <span style={{
+              ...styles.bottomBarLabel,
               color: '#2563eb',
               fontWeight: '800'
             }}>
@@ -2206,8 +2207,8 @@ const areProcessesEquivalent = (p1, p2) => {
         )}
 
         {/* Button 3: View Scope (My Lots vs All Floor) */}
-        <button 
-          style={styles.bottomBarItem} 
+        <button
+          style={styles.bottomBarItem}
           onClick={() => {
             setViewScope(s => s === 'my' ? 'all' : 'my');
           }}
@@ -2228,16 +2229,16 @@ const areProcessesEquivalent = (p1, p2) => {
         </button>
 
         {/* Button 4: Live Refresh */}
-        <button 
-          style={styles.bottomBarItem} 
+        <button
+          style={styles.bottomBarItem}
           onClick={handleRefresh}
           disabled={isRefreshing}
           className="touch-press"
         >
-          <svg 
-            width="20" 
-            height="20" 
-            viewBox="0 0 24 24" 
+          <svg
+            width="20"
+            height="20"
+            viewBox="0 0 24 24"
             fill="none"
             style={{
               animation: isRefreshing ? 'spin 0.8s linear infinite' : 'none'
@@ -2260,8 +2261,8 @@ const areProcessesEquivalent = (p1, p2) => {
         </button>
 
         {/* Button 5: Exit / Logout */}
-        <button 
-          style={styles.bottomBarItem} 
+        <button
+          style={styles.bottomBarItem}
           onClick={onLogout}
           className="touch-press"
         >
