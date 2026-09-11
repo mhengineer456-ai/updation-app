@@ -15,6 +15,8 @@ const PRODUCTION_DEPARTMENTS = [
   'Bone',
   'Washing',
   'Folding',
+  'Filling',
+  'Press',
   'KajButton',
   'Overlock',
   'Jaybir Printing',
@@ -87,6 +89,8 @@ const LoginPortal = ({ onLoginSuccess }) => {
     { id: 'sup-ws-1', username: 'sanjay.washing', password: '2475', name: 'Sanjay Washing', department: 'Washing', shift: 'Morning', role: 'Supervisor' },
     { id: 'sup-fd-1', username: 'ankit.folding', password: '114', name: 'Ankit Overlock', department: 'Folding', shift: 'Morning', role: 'Supervisor' },
     { id: 'sup-fd-2', username: 'aman.folding', password: '113', name: 'Aman Overlock', department: 'Folding', shift: 'Morning', role: 'Supervisor' },
+    { id: 'sup-fl-1', username: 'filling.sup', password: '111', name: 'Filling Supervisor', department: 'Filling', shift: 'Morning', role: 'Supervisor' },
+    { id: 'sup-pr-press', username: 'press.sup', password: '111', name: 'Press Supervisor', department: 'Press', shift: 'Morning', role: 'Supervisor' },
     { id: 'sup-kb-1', username: 'jaybir.kaj', password: '8569', name: 'Jaybir', department: 'KajButton', shift: 'Morning', role: 'Supervisor' },
     { id: 'sup-ov-1', username: 'aman.overlock', password: '113', name: 'Aman Overlock', department: 'Overlock', shift: 'Morning', role: 'Supervisor' },
     { id: 'sup-ov-2', username: 'ankit.overlock', password: '114', name: 'Ankit Overlock', department: 'Overlock', shift: 'Morning', role: 'Supervisor' },
@@ -141,11 +145,44 @@ const LoginPortal = ({ onLoginSuccess }) => {
 
     return combinedSupervisors.filter((u) => {
       const uDept = (u.department || '').trim().toLowerCase();
-      return uDept === targetDept ||
-        (targetDept.includes('feed') && uDept.includes('feed')) ||
-        (targetDept === 'overlock' && uDept === 'ovelock') ||
-        (targetDept === 'ovelock' && uDept === 'overlock') ||
-        (targetDept === 'kajbutton' && u.name.toLowerCase().includes('jaybir'));
+      const uName = (u.name || '').trim().toLowerCase();
+      const uUser = (u.username || '').trim().toLowerCase();
+
+      if (targetDept.includes('press') || targetDept.includes('iron')) {
+        return uDept.includes('press') || uDept.includes('iron') || uName.includes('press') || uName.includes('iron') || uUser.includes('press');
+      }
+      if (targetDept.includes('fill')) {
+        return uDept.includes('fill') || uName.includes('fill') || uUser.includes('fill');
+      }
+      if (targetDept.includes('feed')) {
+        return uDept.includes('feed') || uName.includes('feed') || uName.includes('mohan') || uUser.includes('feed');
+      }
+      if (targetDept.includes('elastic')) {
+        return uDept.includes('elastic') || uName.includes('elastic') || uUser.includes('elastic');
+      }
+      if (targetDept.includes('bone')) {
+        return uDept.includes('bone') || uName.includes('bone') || uName.includes('ramesh') || uUser.includes('bone');
+      }
+      if (targetDept.includes('wash')) {
+        return uDept.includes('wash') || uName.includes('wash') || uName.includes('sanjay') || uUser.includes('wash');
+      }
+      if (targetDept.includes('fold')) {
+        return uDept.includes('fold') || uName.includes('fold') || uUser.includes('fold');
+      }
+      if (targetDept.includes('overlock') || targetDept.includes('ovelock')) {
+        return uDept.includes('overlock') || uDept.includes('ovelock') || uName.includes('overlock') || uName.includes('ovelock') || uUser.includes('overlock');
+      }
+      if (targetDept.includes('print')) {
+        return uDept.includes('print') || uName.includes('print') || uUser.includes('print');
+      }
+      if (targetDept.includes('embroid')) {
+        return uDept.includes('embroid') || uName.includes('embroid') || uUser.includes('embroid');
+      }
+      if (targetDept.includes('kaj') || targetDept.includes('button')) {
+        return uDept.includes('kaj') || uDept.includes('button') || uName.includes('jaybir') || uName.includes('kaj') || uUser.includes('kaj');
+      }
+
+      return uDept === targetDept;
     });
   }, [combinedSupervisors, selectedDept]);
 

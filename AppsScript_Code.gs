@@ -1,5 +1,10 @@
+// ============================================================================
 // COMPLETE GOOGLE APPS SCRIPT - PRODUCTION MANAGEMENT SYSTEM
 // Spreadsheet ID: 1IMhmYlJ3s2PPRgEQs1Ikd4O1OBXK4EYL1oV_-kWAkyg
+// Description: Multi-department issue & status tracking with immutable Issue Dates.
+// ALL Department Issue Dates (Washing Date, KajButton Date, FeedUp Date, etc.)
+// are preserved permanently upon creation and NEVER overwritten during status updates.
+// ============================================================================
 
 function doGet(e) {
   try {
@@ -111,6 +116,37 @@ function doGet(e) {
       case 'getPrintingLots':
         return getJaybirPrintingLots(spreadsheet, data);
 
+      // === FILLING ENDPOINTS (REFERENCE: WASHING CHALLAN) ===
+      case 'submitFillingOrder':
+      case 'submitFillingJobOrder':
+      case 'saveFillingOrder':
+        return saveFillingOrder(spreadsheet, data);
+      case 'updateFillingStatus':
+        return updateFillingStatus(spreadsheet, data);
+      case 'getFillingLots':
+        return getFillingLots(spreadsheet, data);
+
+      // === PRESS MAN (IRON) ENDPOINTS ===
+      case 'submitPressOrder':
+      case 'submitPressManOrder':
+      case 'submitPressmanOrder':
+      case 'submitPressJobOrder':
+      case 'submitIronOrder':
+      case 'savePressOrder':
+      case 'savePressManOrder':
+      case 'savePressmanOrder':
+        return savePressManOrder(spreadsheet, data);
+      case 'updatePressStatus':
+      case 'updatePressManStatus':
+      case 'updatePressmanStatus':
+      case 'updateIronStatus':
+        return updatePressManStatus(spreadsheet, data);
+      case 'getPressLots':
+      case 'getPressManLots':
+      case 'getPressmanLots':
+      case 'getIronLots':
+        return getPressManLots(spreadsheet, data);
+
       // === UNIVERSAL UPDATE ROUTE ===
       case 'updateStatus':
       case 'updateLotStatus':
@@ -120,6 +156,8 @@ function doGet(e) {
         if (dept.includes('feed')) return updateFeedUpStatus(spreadsheet, data);
         if (dept.includes('elastic')) return updateElasticStatus(spreadsheet, data);
         if (dept.includes('wash')) return updateWashingStatus(spreadsheet, data);
+        if (dept.includes('fill')) return updateFillingStatus(spreadsheet, data);
+        if (dept.includes('press') || dept.includes('iron')) return updatePressManStatus(spreadsheet, data);
         if (dept.includes('bone')) return updateBoneStatus(spreadsheet, data);
         if (dept.includes('overlock')) return updateOverlockStatus(spreadsheet, data);
         if (dept.includes('fold')) return updateFoldingStatus(spreadsheet, data);
@@ -285,6 +323,1186 @@ function ensureReopenColumns(sheet, headers) {
   return { headers, reopenCol, reopenDateCol, reopenProcessCol };
 }
 
+// ============ WASHING FUNCTIONS ============
+function saveWashingOrder(spreadsheet, data) {
+  try {
+    let sheet = spreadsheet.getSheetByName('Washing');
+    
+    const requiredHeaders = [
+      'Timestamp',
+      'Challan No',
+      'Lot Number',
+      'Garment Type',
+      'Fabric',
+      'Style',
+      'Brand',
+      'Particulars',
+      'Washing Plant',
+      'Plant Address',
+      'Plant GSTIN',
+      'Process / Wash Type',
+      'HSN Code',
+      'Transport Mode',
+      'Vehicle No',
+      'Washing Supervisor',
+      'Washing Date',
+      'Total Bags',
+      'Lot Total Qty',
+      'Total Pcs',
+      'Selected Colors',
+      'Color Breakdown',
+      'Remarks',
+      'Company Name',
+      'Total Manpower',
+      'WIP Washing',
+      'Washing Complete',
+      'REOPEN',
+      'REOPEN DATE',
+      'REOPEN FOR WHICH PROCESS'
+    ];
+
+    if (!sheet) {
+      sheet = spreadsheet.insertSheet('Washing');
+      sheet.appendRow(requiredHeaders);
+    } else {
+      let headers = sheet.getRange(1, 1, 1, Math.max(sheet.getLastColumn(), 1)).getValues()[0];
+      requiredHeaders.forEach(header => {
+        const exists = headers.some(h => (h || '').toString().trim().toLowerCase() === header.toLowerCase());
+        if (!exists) {
+          const nextCol = sheet.getLastColumn() + 1;
+          sheet.getRange(1, nextCol).setValue(header);
+          headers.push(header);
+        }
+      });
+    }
+
+    const currentHeaders = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0];
+    const rowData = new Array(currentHeaders.length).fill('');
+
+    let colorBreakdownVal = '';
+    if (data.colorBreakdown) {
+      colorBreakdownVal = typeof data.colorBreakdown === 'string' ? data.colorBreakdown : JSON.stringify(data.colorBreakdown);
+    } else if (data.selectedRows) {
+      colorBreakdownVal = typeof data.selectedRows === 'string' ? data.selectedRows : JSON.stringify(data.selectedRows);
+    }
+
+    const columnMapping = {
+      'Timestamp': new Date(data.timestamp || new Date().toISOString()),
+      'Challan No': data.challanNo || data.challanNumber || (data.lotNumber ? `JO-${data.lotNumber}` : ''),
+      'Lot Number': data.lotNumber || data.lotNo || '',
+      'Garment Type': data.garmentType || '',
+      'Fabric': data.fabric || '',
+      'Style': data.style || '',
+      'Brand': data.brand || '',
+      'Particulars': data.particulars || data.style || data.garmentType || '',
+      'Washing Plant': data.washingPlant || data.partyName || data.vendor || 'Megaline Dyeing And Finishing House',
+      'Plant Address': data.plantAddress || data.washingPlantAddress || data.partyAddress || '',
+      'Plant GSTIN': data.plantGstin || data.washingPlantGstin || data.partyGstin || '',
+      'Process / Wash Type': data.washType || data.process || data.washProcess || 'WASHING',
+      'HSN Code': data.hsnCode || data.hsn || '62011100',
+      'Transport Mode': data.transportMode || data.modeBy || 'TEMPO',
+      'Vehicle No': data.vehicleNo || data.vehicleNumber || '',
+      'Washing Supervisor': data.washingSupervisor || data.supervisor || '',
+      'Washing Date': data.washingDate || data.issueDate || formatDate(new Date()),
+      'Total Bags': parseFloat(data.totalBags || data.bags) || 0,
+      'Lot Total Qty': parseFloat(data.lotTotalQty || data.totalCuttingPcs || data.lotQty) || 0,
+      'Total Pcs': parseFloat(data.totalPcs || data.grandWashingPcs || data.sentQty) || 0,
+      'Selected Colors': Array.isArray(data.selectedColors) ? data.selectedColors.join(', ') : (data.selectedColors || ''),
+      'Color Breakdown': colorBreakdownVal,
+      'Remarks': data.remarks || data.specialNotes || '',
+      'Company Name': data.companyName || 'GOYAL CREATIONS (Prop.Mohit Kumar Goyal)',
+      'Total Manpower': data.totalManpower || '0'
+    };
+
+    currentHeaders.forEach((header, index) => {
+      const hTrim = (header || '').toString().trim();
+      const hLower = hTrim.toLowerCase();
+
+      if (columnMapping[hTrim] !== undefined) {
+        rowData[index] = columnMapping[hTrim];
+      } else if (hLower.includes('challan')) {
+        rowData[index] = columnMapping['Challan No'];
+      } else if (hLower.includes('particular')) {
+        rowData[index] = columnMapping['Particulars'];
+      } else if (hLower.includes('plant') || hLower.includes('party')) {
+        rowData[index] = columnMapping['Washing Plant'];
+      } else if (hLower.includes('vehicle')) {
+        rowData[index] = columnMapping['Vehicle No'];
+      } else if (hLower.includes('bag')) {
+        rowData[index] = columnMapping['Total Bags'];
+      } else if (hLower.includes('lot total') || hLower.includes('lot qty')) {
+        rowData[index] = columnMapping['Lot Total Qty'];
+      } else if (hLower.includes('breakdown')) {
+        rowData[index] = colorBreakdownVal;
+      }
+    });
+
+    sheet.appendRow(rowData);
+    const lastRow = sheet.getLastRow();
+
+    const wipIndex = currentHeaders.findIndex(h => (h || '').toString().trim().toLowerCase() === 'wip washing');
+    const completeIndex = currentHeaders.findIndex(h => (h || '').toString().trim().toLowerCase() === 'washing complete');
+
+    if (wipIndex !== -1) sheet.getRange(lastRow, wipIndex + 1).setValue('[]');
+    if (completeIndex !== -1) sheet.getRange(lastRow, completeIndex + 1).setValue('[]');
+
+    SpreadsheetApp.flush();
+
+    return createJsonResponse({
+      ok: true,
+      message: `Washing Challan saved to row ${lastRow}`,
+      lotNumber: data.lotNumber || data.lotNo,
+      challanNo: columnMapping['Challan No']
+    });
+
+  } catch (error) {
+    return createJsonResponse({
+      ok: false,
+      error: `Failed to save Washing order: ${error.toString()}`
+    });
+  }
+}
+
+function updateWashingStatus(spreadsheet, data) {
+  try {
+    const sheet = spreadsheet.getSheetByName('Washing');
+    if (!sheet) {
+      return createJsonResponse({
+        ok: false,
+        error: 'Washing sheet not found'
+      });
+    }
+
+    let headers = sheet.getRange(1, 1, 1, Math.max(sheet.getLastColumn(), 1)).getValues()[0].map(h => (h || '').toString().trim());
+    const lotNumberCol = headers.findIndex(h => h.toLowerCase() === 'lot number') + 1;
+    let wipHistoryCol = headers.findIndex(h => h.toLowerCase() === 'wip washing') + 1;
+    let completeHistoryCol = headers.findIndex(h => h.toLowerCase() === 'washing complete') + 1;
+
+    if (wipHistoryCol === 0) {
+      const nextCol = sheet.getLastColumn() + 1;
+      sheet.getRange(1, nextCol).setValue('WIP Washing');
+      headers.push('WIP Washing');
+      wipHistoryCol = nextCol;
+    }
+    if (completeHistoryCol === 0) {
+      const nextCol = sheet.getLastColumn() + 1;
+      sheet.getRange(1, nextCol).setValue('Washing Complete');
+      headers.push('Washing Complete');
+      completeHistoryCol = nextCol;
+    }
+
+    const lotNumber = (data.lotNumber || data.lotNo || '').toString().trim();
+    if (!lotNumber) {
+      return createJsonResponse({ ok: false, error: 'No lotNumber provided' });
+    }
+
+    const totalRows = sheet.getLastRow();
+    if (totalRows < 2) {
+      return createJsonResponse({ ok: false, error: 'No rows in Washing sheet' });
+    }
+
+    const lotNumbers = sheet.getRange(2, lotNumberCol, totalRows - 1, 1).getValues().flat();
+    const lotRowIndex = lotNumbers.findIndex(num => (num || '').toString().trim() === lotNumber) + 2;
+
+    if (lotRowIndex < 2) {
+      return createJsonResponse({
+        ok: false,
+        error: `Lot ${lotNumber} not found in Washing sheet`
+      });
+    }
+
+    const statusType = (data.statusType || 'wip').toLowerCase();
+    const status = data.status || 'Updated';
+    const remarks = data.remarks || '';
+    const supervisor = data.supervisor || 'Unknown';
+    const timestamp = new Date().toISOString();
+
+    const historyEntry = {
+      status: status,
+      remarks: remarks,
+      supervisor: supervisor,
+      timestamp: timestamp,
+      date: new Date().toLocaleDateString('en-IN'),
+      time: new Date().toLocaleTimeString('en-IN')
+    };
+
+    if (statusType === 'wip' && wipHistoryCol > 0) {
+      const existingWip = sheet.getRange(lotRowIndex, wipHistoryCol).getValue();
+      let wipHistory = [];
+      if (existingWip && existingWip.toString().trim() !== '') {
+        try {
+          wipHistory = JSON.parse(existingWip);
+          if (!Array.isArray(wipHistory)) wipHistory = [wipHistory];
+        } catch (e) {
+          wipHistory = [{ status: existingWip, timestamp: new Date().toISOString() }];
+        }
+      }
+      wipHistory.unshift(historyEntry);
+      sheet.getRange(lotRowIndex, wipHistoryCol).setValue(JSON.stringify(wipHistory));
+
+    } else if (statusType === 'complete' && completeHistoryCol > 0) {
+      const existingComplete = sheet.getRange(lotRowIndex, completeHistoryCol).getValue();
+      let completeHistory = [];
+      if (existingComplete && existingComplete.toString().trim() !== '') {
+        try {
+          completeHistory = JSON.parse(existingComplete);
+          if (!Array.isArray(completeHistory)) completeHistory = [completeHistory];
+        } catch (e) {
+          completeHistory = [{ status: existingComplete, timestamp: new Date().toISOString() }];
+        }
+      }
+      completeHistory.unshift(historyEntry);
+      sheet.getRange(lotRowIndex, completeHistoryCol).setValue(JSON.stringify(completeHistory));
+
+      // Note: Washing Date (Issue Date) is preserved and NEVER overwritten here
+
+      const reopenCols = ensureReopenColumns(sheet, headers);
+      if (reopenCols.reopenCol > 0) {
+        const curReopen = sheet.getRange(lotRowIndex, reopenCols.reopenCol).getValue();
+        if (curReopen && curReopen.toString().trim().toLowerCase() === 'yes') {
+          sheet.getRange(lotRowIndex, reopenCols.reopenCol).setValue('Completed');
+        }
+      }
+    } else if (statusType === 'reopen') {
+      if (completeHistoryCol > 0) {
+        sheet.getRange(lotRowIndex, completeHistoryCol).setValue('[]');
+      }
+      
+      // Note: Washing Date (Issue Date) is preserved and NEVER wiped here
+
+      const reopenProcess = data.process || data.status || 'Pending';
+      const reopenCols = ensureReopenColumns(sheet, headers);
+      if (reopenCols.reopenCol > 0) sheet.getRange(lotRowIndex, reopenCols.reopenCol).setValue('Yes');
+      if (reopenCols.reopenDateCol > 0) sheet.getRange(lotRowIndex, reopenCols.reopenDateCol).setValue(formatDate(new Date()));
+      if (reopenCols.reopenProcessCol > 0) sheet.getRange(lotRowIndex, reopenCols.reopenProcessCol).setValue(reopenProcess);
+
+      const reopenEntry = {
+        status: `Reopened: ${reopenProcess}`,
+        action: 'reopen',
+        process: reopenProcess,
+        remarks: remarks || `Reopened for ${reopenProcess}`,
+        supervisor: supervisor,
+        timestamp: timestamp,
+        date: new Date().toLocaleDateString('en-IN'),
+        time: new Date().toLocaleTimeString('en-IN')
+      };
+      const existingWip = sheet.getRange(lotRowIndex, wipHistoryCol).getValue();
+      let wipHistory = [];
+      if (existingWip && existingWip.toString().trim() !== '') {
+        try {
+          wipHistory = JSON.parse(existingWip);
+          if (!Array.isArray(wipHistory)) wipHistory = [wipHistory];
+        } catch (e) {
+          wipHistory = [{ status: existingWip, timestamp: timestamp }];
+        }
+      }
+      wipHistory.unshift(reopenEntry);
+      sheet.getRange(lotRowIndex, wipHistoryCol).setValue(JSON.stringify(wipHistory));
+    }
+
+    SpreadsheetApp.flush();
+
+    return createJsonResponse({
+      ok: true,
+      message: `Washing ${statusType} status updated successfully`,
+      lotNumber: lotNumber,
+      status: status
+    });
+
+  } catch (error) {
+    return createJsonResponse({
+      ok: false,
+      error: `Failed to update Washing status: ${error.toString()}`
+    });
+  }
+}
+
+function getWashingLots(spreadsheet, data) {
+  try {
+    const sheet = spreadsheet.getSheetByName('Washing');
+    if (!sheet || sheet.getLastRow() < 2) {
+      return createJsonResponse({
+        ok: true,
+        lots: [],
+        total: 0,
+        message: 'No Washing data found'
+      });
+    }
+
+    const supervisorName = (data.supervisor || '').toLowerCase().trim();
+    const headers = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0];
+    const dataRange = sheet.getRange(2, 1, sheet.getLastRow() - 1, headers.length);
+    const rows = dataRange.getValues();
+
+    const lots = rows.map((row, index) => {
+      const lot = {};
+      headers.forEach((header, colIndex) => {
+        lot[header] = row[colIndex] || '';
+      });
+
+      let wipHistory = [];
+      let completeHistory = [];
+      let colorBreakdown = null;
+
+      if (lot['WIP Washing']) {
+        try {
+          const parsed = JSON.parse(lot['WIP Washing']);
+          wipHistory = Array.isArray(parsed) ? parsed : [parsed];
+        } catch (e) { wipHistory = []; }
+      }
+
+      if (lot['Washing Complete']) {
+        try {
+          const parsed = JSON.parse(lot['Washing Complete']);
+          completeHistory = Array.isArray(parsed) ? parsed : [parsed];
+        } catch (e) { completeHistory = []; }
+      }
+
+      if (lot['Color Breakdown']) {
+        try {
+          colorBreakdown = typeof lot['Color Breakdown'] === 'string' ? JSON.parse(lot['Color Breakdown']) : lot['Color Breakdown'];
+        } catch (e) { colorBreakdown = lot['Color Breakdown']; }
+      }
+
+      let currentStatus = 'Ready for Washing';
+      let isCompleted = false;
+      let isInProgress = false;
+
+      if (wipHistory.length > 0 && (wipHistory[0].action === 'reopen' || (wipHistory[0].status && wipHistory[0].status.toString().toLowerCase().includes('reopen')))) {
+        currentStatus = wipHistory[0].status;
+        isCompleted = false;
+        isInProgress = false;
+      } else if (completeHistory.length > 0) {
+        const latestComplete = completeHistory[0];
+        if (latestComplete.status === 'Washing Completed' || latestComplete.status.includes('Complete')) {
+          currentStatus = 'Washing Completed';
+          isCompleted = true;
+        } else {
+          currentStatus = latestComplete.status;
+          isInProgress = true;
+        }
+      } else if (wipHistory.length > 0) {
+        currentStatus = wipHistory[0].status;
+        isInProgress = true;
+      }
+
+      return {
+        ...lot,
+        id: index + 1,
+        challanNo: lot['Challan No'] || '',
+        particulars: lot['Particulars'] || '',
+        washingPlant: lot['Washing Plant'] || '',
+        plantAddress: lot['Plant Address'] || '',
+        plantGstin: lot['Plant GSTIN'] || '',
+        washType: lot['Process / Wash Type'] || '',
+        vehicleNo: lot['Vehicle No'] || '',
+        totalBags: lot['Total Bags'] || 0,
+        lotTotalQty: lot['Lot Total Qty'] || 0,
+        colorBreakdown: colorBreakdown,
+        currentStatus: currentStatus,
+        isCompleted: isCompleted,
+        isInProgress: isInProgress,
+        wipHistory: wipHistory,
+        completeHistory: completeHistory,
+        lastUpdated: wipHistory.length > 0 ? wipHistory[0].timestamp : 
+                    completeHistory.length > 0 ? completeHistory[0].timestamp : ''
+      };
+    });
+
+    const filteredLots = supervisorName 
+      ? lots.filter(lot => {
+          const lotSupervisor = (lot['Washing Supervisor'] || '').toLowerCase().trim();
+          return lotSupervisor.includes(supervisorName);
+        })
+      : lots;
+
+    return createJsonResponse({
+      ok: true,
+      lots: filteredLots,
+      total: filteredLots.length
+    });
+
+  } catch (error) {
+    return createJsonResponse({
+      ok: false,
+      error: `Failed to get Washing lots: ${error.toString()}`,
+      lots: []
+    });
+  }
+}
+
+// ============ FILLING FUNCTIONS (REFERENCE: WASHING CHALLAN) ============
+function saveFillingOrder(spreadsheet, data) {
+  try {
+    let sheet = spreadsheet.getSheetByName('Filling');
+    
+    const requiredHeaders = [
+      'Timestamp',
+      'Challan No',
+      'Lot Number',
+      'Garment Type',
+      'Fabric',
+      'Style',
+      'Brand',
+      'Particulars',
+      'Filling Plant',
+      'Plant Address',
+      'Plant GSTIN',
+      'Process / Wash Type',
+      'HSN Code',
+      'Transport Mode',
+      'Vehicle No',
+      'Filling Supervisor',
+      'Filling Date',
+      'Total Bags',
+      'Lot Total Qty',
+      'Total Pcs',
+      'Selected Colors',
+      'Color Breakdown',
+      'Remarks',
+      'Company Name',
+      'Total Manpower',
+      'WIP Filling',
+      'Filling Complete',
+      'REOPEN',
+      'REOPEN DATE',
+      'REOPEN FOR WHICH PROCESS'
+    ];
+
+    if (!sheet) {
+      sheet = spreadsheet.insertSheet('Filling');
+      sheet.appendRow(requiredHeaders);
+    } else {
+      let headers = sheet.getRange(1, 1, 1, Math.max(sheet.getLastColumn(), 1)).getValues()[0];
+      requiredHeaders.forEach(header => {
+        const exists = headers.some(h => (h || '').toString().trim().toLowerCase() === header.toLowerCase());
+        if (!exists) {
+          const nextCol = sheet.getLastColumn() + 1;
+          sheet.getRange(1, nextCol).setValue(header);
+          headers.push(header);
+        }
+      });
+    }
+
+    const currentHeaders = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0];
+    const rowData = new Array(currentHeaders.length).fill('');
+
+    let colorBreakdownVal = '';
+    if (data.colorBreakdown) {
+      colorBreakdownVal = typeof data.colorBreakdown === 'string' ? data.colorBreakdown : JSON.stringify(data.colorBreakdown);
+    } else if (data.selectedRows) {
+      colorBreakdownVal = typeof data.selectedRows === 'string' ? data.selectedRows : JSON.stringify(data.selectedRows);
+    }
+
+    const columnMapping = {
+      'Timestamp': new Date(data.timestamp || new Date().toISOString()),
+      'Challan No': data.challanNo || data.challanNumber || (data.lotNumber ? `FL-${data.lotNumber}` : ''),
+      'Lot Number': data.lotNumber || data.lotNo || '',
+      'Garment Type': data.garmentType || '',
+      'Fabric': data.fabric || '',
+      'Style': data.style || '',
+      'Brand': data.brand || '',
+      'Particulars': data.particulars || data.style || data.garmentType || '',
+      'Filling Plant': data.fillingPlant || data.plant || data.partyName || data.vendor || 'Filling Plant Unit',
+      'Plant Address': data.plantAddress || data.fillingPlantAddress || data.partyAddress || '',
+      'Plant GSTIN': data.plantGstin || data.fillingPlantGstin || data.partyGstin || '',
+      'Process / Wash Type': data.processType || data.process || data.washType || 'FILLING',
+      'HSN Code': data.hsnCode || data.hsn || '62011100',
+      'Transport Mode': data.transportMode || data.modeBy || 'TEMPO',
+      'Vehicle No': data.vehicleNo || data.vehicleNumber || '',
+      'Filling Supervisor': data.fillingSupervisor || data.supervisor || '',
+      'Filling Date': data.fillingDate || data.issueDate || formatDate(new Date()),
+      'Total Bags': parseFloat(data.totalBags || data.bags) || 0,
+      'Lot Total Qty': parseFloat(data.lotTotalQty || data.totalCuttingPcs || data.lotQty) || 0,
+      'Total Pcs': parseFloat(data.totalPcs || data.grandFillingPcs || data.sentQty) || 0,
+      'Selected Colors': Array.isArray(data.selectedColors) ? data.selectedColors.join(', ') : (data.selectedColors || ''),
+      'Color Breakdown': colorBreakdownVal,
+      'Remarks': data.remarks || data.specialNotes || '',
+      'Company Name': data.companyName || 'GOYAL CREATIONS (Prop.Mohit Kumar Goyal)',
+      'Total Manpower': data.totalManpower || '0'
+    };
+
+    currentHeaders.forEach((header, index) => {
+      const hTrim = (header || '').toString().trim();
+      const hLower = hTrim.toLowerCase();
+
+      if (columnMapping[hTrim] !== undefined) {
+        rowData[index] = columnMapping[hTrim];
+      } else if (hLower.includes('challan')) {
+        rowData[index] = columnMapping['Challan No'];
+      } else if (hLower.includes('particular')) {
+        rowData[index] = columnMapping['Particulars'];
+      } else if (hLower.includes('plant') || hLower.includes('party')) {
+        rowData[index] = columnMapping['Filling Plant'];
+      } else if (hLower.includes('vehicle')) {
+        rowData[index] = columnMapping['Vehicle No'];
+      } else if (hLower.includes('bag')) {
+        rowData[index] = columnMapping['Total Bags'];
+      } else if (hLower.includes('lot total') || hLower.includes('lot qty')) {
+        rowData[index] = columnMapping['Lot Total Qty'];
+      } else if (hLower.includes('breakdown')) {
+        rowData[index] = colorBreakdownVal;
+      }
+    });
+
+    sheet.appendRow(rowData);
+    const lastRow = sheet.getLastRow();
+
+    const wipIndex = currentHeaders.findIndex(h => (h || '').toString().trim().toLowerCase() === 'wip filling');
+    const completeIndex = currentHeaders.findIndex(h => (h || '').toString().trim().toLowerCase() === 'filling complete');
+
+    if (wipIndex !== -1) sheet.getRange(lastRow, wipIndex + 1).setValue('[]');
+    if (completeIndex !== -1) sheet.getRange(lastRow, completeIndex + 1).setValue('[]');
+
+    SpreadsheetApp.flush();
+
+    return createJsonResponse({
+      ok: true,
+      message: `Filling Challan saved to row ${lastRow}`,
+      lotNumber: data.lotNumber || data.lotNo,
+      challanNo: columnMapping['Challan No']
+    });
+
+  } catch (error) {
+    return createJsonResponse({
+      ok: false,
+      error: `Failed to save Filling order: ${error.toString()}`
+    });
+  }
+}
+
+function updateFillingStatus(spreadsheet, data) {
+  try {
+    const sheet = spreadsheet.getSheetByName('Filling');
+    if (!sheet) {
+      return createJsonResponse({
+        ok: false,
+        error: 'Filling sheet not found'
+      });
+    }
+
+    let headers = sheet.getRange(1, 1, 1, Math.max(sheet.getLastColumn(), 1)).getValues()[0].map(h => (h || '').toString().trim());
+    const lotNumberCol = headers.findIndex(h => h.toLowerCase() === 'lot number') + 1;
+    let wipHistoryCol = headers.findIndex(h => h.toLowerCase() === 'wip filling') + 1;
+    let completeHistoryCol = headers.findIndex(h => h.toLowerCase() === 'filling complete') + 1;
+
+    if (wipHistoryCol === 0) {
+      const nextCol = sheet.getLastColumn() + 1;
+      sheet.getRange(1, nextCol).setValue('WIP Filling');
+      headers.push('WIP Filling');
+      wipHistoryCol = nextCol;
+    }
+    if (completeHistoryCol === 0) {
+      const nextCol = sheet.getLastColumn() + 1;
+      sheet.getRange(1, nextCol).setValue('Filling Complete');
+      headers.push('Filling Complete');
+      completeHistoryCol = nextCol;
+    }
+
+    const lotNumber = (data.lotNumber || data.lotNo || '').toString().trim();
+    if (!lotNumber) {
+      return createJsonResponse({ ok: false, error: 'No lotNumber provided' });
+    }
+
+    const totalRows = sheet.getLastRow();
+    if (totalRows < 2) {
+      return createJsonResponse({ ok: false, error: 'No rows in Filling sheet' });
+    }
+
+    const lotNumbers = sheet.getRange(2, lotNumberCol, totalRows - 1, 1).getValues().flat();
+    const lotRowIndex = lotNumbers.findIndex(num => (num || '').toString().trim() === lotNumber) + 2;
+
+    if (lotRowIndex < 2) {
+      return createJsonResponse({
+        ok: false,
+        error: `Lot ${lotNumber} not found in Filling sheet`
+      });
+    }
+
+    const statusType = (data.statusType || 'wip').toLowerCase();
+    const status = data.status || 'Updated';
+    const remarks = data.remarks || '';
+    const supervisor = data.supervisor || 'Unknown';
+    const timestamp = new Date().toISOString();
+
+    const historyEntry = {
+      status: status,
+      remarks: remarks,
+      supervisor: supervisor,
+      timestamp: timestamp,
+      date: new Date().toLocaleDateString('en-IN'),
+      time: new Date().toLocaleTimeString('en-IN')
+    };
+
+    if (statusType === 'wip' && wipHistoryCol > 0) {
+      const existingWip = sheet.getRange(lotRowIndex, wipHistoryCol).getValue();
+      let wipHistory = [];
+      if (existingWip && existingWip.toString().trim() !== '') {
+        try {
+          wipHistory = JSON.parse(existingWip);
+          if (!Array.isArray(wipHistory)) wipHistory = [wipHistory];
+        } catch (e) {
+          wipHistory = [{ status: existingWip, timestamp: new Date().toISOString() }];
+        }
+      }
+      wipHistory.unshift(historyEntry);
+      sheet.getRange(lotRowIndex, wipHistoryCol).setValue(JSON.stringify(wipHistory));
+
+    } else if (statusType === 'complete' && completeHistoryCol > 0) {
+      const existingComplete = sheet.getRange(lotRowIndex, completeHistoryCol).getValue();
+      let completeHistory = [];
+      if (existingComplete && existingComplete.toString().trim() !== '') {
+        try {
+          completeHistory = JSON.parse(existingComplete);
+          if (!Array.isArray(completeHistory)) completeHistory = [completeHistory];
+        } catch (e) {
+          completeHistory = [{ status: existingComplete, timestamp: new Date().toISOString() }];
+        }
+      }
+      completeHistory.unshift(historyEntry);
+      sheet.getRange(lotRowIndex, completeHistoryCol).setValue(JSON.stringify(completeHistory));
+
+      // Note: Filling Date (Issue Date) is preserved and NEVER overwritten here
+
+      const reopenCols = ensureReopenColumns(sheet, headers);
+      if (reopenCols.reopenCol > 0) {
+        const curReopen = sheet.getRange(lotRowIndex, reopenCols.reopenCol).getValue();
+        if (curReopen && curReopen.toString().trim().toLowerCase() === 'yes') {
+          sheet.getRange(lotRowIndex, reopenCols.reopenCol).setValue('Completed');
+        }
+      }
+    } else if (statusType === 'reopen') {
+      if (completeHistoryCol > 0) {
+        sheet.getRange(lotRowIndex, completeHistoryCol).setValue('[]');
+      }
+      
+      // Note: Filling Date (Issue Date) is preserved and NEVER wiped here
+
+      const reopenProcess = data.process || data.status || 'Pending';
+      const reopenCols = ensureReopenColumns(sheet, headers);
+      if (reopenCols.reopenCol > 0) sheet.getRange(lotRowIndex, reopenCols.reopenCol).setValue('Yes');
+      if (reopenCols.reopenDateCol > 0) sheet.getRange(lotRowIndex, reopenCols.reopenDateCol).setValue(formatDate(new Date()));
+      if (reopenCols.reopenProcessCol > 0) sheet.getRange(lotRowIndex, reopenCols.reopenProcessCol).setValue(reopenProcess);
+
+      const reopenEntry = {
+        status: `Reopened: ${reopenProcess}`,
+        action: 'reopen',
+        process: reopenProcess,
+        remarks: remarks || `Reopened for ${reopenProcess}`,
+        supervisor: supervisor,
+        timestamp: timestamp,
+        date: new Date().toLocaleDateString('en-IN'),
+        time: new Date().toLocaleTimeString('en-IN')
+      };
+      const existingWip = sheet.getRange(lotRowIndex, wipHistoryCol).getValue();
+      let wipHistory = [];
+      if (existingWip && existingWip.toString().trim() !== '') {
+        try {
+          wipHistory = JSON.parse(existingWip);
+          if (!Array.isArray(wipHistory)) wipHistory = [wipHistory];
+        } catch (e) {
+          wipHistory = [{ status: existingWip, timestamp: timestamp }];
+        }
+      }
+      wipHistory.unshift(reopenEntry);
+      sheet.getRange(lotRowIndex, wipHistoryCol).setValue(JSON.stringify(wipHistory));
+    }
+
+    SpreadsheetApp.flush();
+
+    return createJsonResponse({
+      ok: true,
+      message: `Filling ${statusType} status updated successfully`,
+      lotNumber: lotNumber,
+      status: status
+    });
+
+  } catch (error) {
+    return createJsonResponse({
+      ok: false,
+      error: `Failed to update Filling status: ${error.toString()}`
+    });
+  }
+}
+
+function getFillingLots(spreadsheet, data) {
+  try {
+    const sheet = spreadsheet.getSheetByName('Filling');
+    if (!sheet || sheet.getLastRow() < 2) {
+      return createJsonResponse({
+        ok: true,
+        lots: [],
+        total: 0,
+        message: 'No Filling data found'
+      });
+    }
+
+    const supervisorName = (data.supervisor || '').toLowerCase().trim();
+    const headers = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0];
+    const dataRange = sheet.getRange(2, 1, sheet.getLastRow() - 1, headers.length);
+    const rows = dataRange.getValues();
+
+    const lots = rows.map((row, index) => {
+      const lot = {};
+      headers.forEach((header, colIndex) => {
+        lot[header] = row[colIndex] || '';
+      });
+
+      let wipHistory = [];
+      let completeHistory = [];
+      let colorBreakdown = null;
+
+      if (lot['WIP Filling']) {
+        try {
+          const parsed = JSON.parse(lot['WIP Filling']);
+          wipHistory = Array.isArray(parsed) ? parsed : [parsed];
+        } catch (e) { wipHistory = []; }
+      }
+
+      if (lot['Filling Complete']) {
+        try {
+          const parsed = JSON.parse(lot['Filling Complete']);
+          completeHistory = Array.isArray(parsed) ? parsed : [parsed];
+        } catch (e) { completeHistory = []; }
+      }
+
+      if (lot['Color Breakdown']) {
+        try {
+          colorBreakdown = typeof lot['Color Breakdown'] === 'string' ? JSON.parse(lot['Color Breakdown']) : lot['Color Breakdown'];
+        } catch (e) { colorBreakdown = lot['Color Breakdown']; }
+      }
+
+      let currentStatus = 'Ready for Filling';
+      let isCompleted = false;
+      let isInProgress = false;
+
+      if (wipHistory.length > 0 && (wipHistory[0].action === 'reopen' || (wipHistory[0].status && wipHistory[0].status.toString().toLowerCase().includes('reopen')))) {
+        currentStatus = wipHistory[0].status;
+        isCompleted = false;
+        isInProgress = false;
+      } else if (completeHistory.length > 0) {
+        const latestComplete = completeHistory[0];
+        if (latestComplete.status === 'Filling Completed' || latestComplete.status.includes('Complete')) {
+          currentStatus = 'Filling Completed';
+          isCompleted = true;
+        } else {
+          currentStatus = latestComplete.status;
+          isInProgress = true;
+        }
+      } else if (wipHistory.length > 0) {
+        currentStatus = wipHistory[0].status;
+        isInProgress = true;
+      }
+
+      return {
+        ...lot,
+        id: index + 1,
+        challanNo: lot['Challan No'] || '',
+        particulars: lot['Particulars'] || '',
+        fillingPlant: lot['Filling Plant'] || '',
+        plantAddress: lot['Plant Address'] || '',
+        plantGstin: lot['Plant GSTIN'] || '',
+        processType: lot['Process / Wash Type'] || '',
+        vehicleNo: lot['Vehicle No'] || '',
+        totalBags: lot['Total Bags'] || 0,
+        lotTotalQty: lot['Lot Total Qty'] || 0,
+        colorBreakdown: colorBreakdown,
+        currentStatus: currentStatus,
+        isCompleted: isCompleted,
+        isInProgress: isInProgress,
+        wipHistory: wipHistory,
+        completeHistory: completeHistory,
+        lastUpdated: wipHistory.length > 0 ? wipHistory[0].timestamp : 
+                    completeHistory.length > 0 ? completeHistory[0].timestamp : ''
+      };
+    });
+
+    const filteredLots = supervisorName 
+      ? lots.filter(lot => {
+          const lotSupervisor = (lot['Filling Supervisor'] || '').toLowerCase().trim();
+          return lotSupervisor.includes(supervisorName);
+        })
+      : lots;
+
+    return createJsonResponse({
+      ok: true,
+      lots: filteredLots,
+      total: filteredLots.length
+    });
+
+  } catch (error) {
+    return createJsonResponse({
+      ok: false,
+      error: `Failed to get Filling lots: ${error.toString()}`,
+      lots: []
+    });
+  }
+}
+
+// ============ PRESS MAN FUNCTIONS ============
+// ============ PRESS MAN (IRON) FUNCTIONS ============
+function savePressManOrder(spreadsheet, data) {
+  try {
+    let sheet = spreadsheet.getSheetByName('Press') || spreadsheet.getSheetByName('PressMan') || spreadsheet.getSheetByName('Press Man');
+    
+    const requiredHeaders = [
+      'Timestamp',
+      'Lot Number',
+      'Garment Type',
+      'Fabric',
+      'Style',
+      'Brand',
+      'Press Supervisor',
+      'Press Date',
+      'Total Pcs',
+      'WIP Press',
+      'Press Complete',
+      'Total Manpower',
+      'REOPEN',
+      'REOPEN DATE',
+      'REOPEN FOR WHICH PROCESS'
+    ];
+
+    if (!sheet) {
+      sheet = spreadsheet.insertSheet('Press');
+      sheet.appendRow(requiredHeaders);
+    } else {
+      let headers = sheet.getRange(1, 1, 1, Math.max(sheet.getLastColumn(), 1)).getValues()[0];
+      requiredHeaders.forEach(header => {
+        const exists = headers.some(h => (h || '').toString().trim().toLowerCase() === header.toLowerCase());
+        if (!exists) {
+          const nextCol = sheet.getLastColumn() + 1;
+          sheet.getRange(1, nextCol).setValue(header);
+          headers.push(header);
+        }
+      });
+    }
+
+    const currentHeaders = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0];
+    const rowData = new Array(currentHeaders.length).fill('');
+
+    const supervisorVal = data.pressSupervisor || data.pressManSupervisor || data.pressmanSupervisor || data.supervisor || '';
+    const dateVal = data.pressDate || data.pressManDate || data.pressmanDate || data.issueDate || formatDate(new Date());
+
+    const columnMapping = {
+      'Timestamp': new Date(data.timestamp || new Date().toISOString()),
+      'Lot Number': data.lotNumber || data.lotNo || '',
+      'Garment Type': data.garmentType || '',
+      'Fabric': data.fabric || '',
+      'Style': data.style || '',
+      'Brand': data.brand || '',
+      'Press Supervisor': supervisorVal,
+      'Press Man Supervisor': supervisorVal,
+      'Press Date': dateVal,
+      'Press Man Date': dateVal,
+      'Total Pcs': parseFloat(data.totalPcs) || 0,
+      'Total Manpower': data.totalManpower || '0'
+    };
+
+    currentHeaders.forEach((header, index) => {
+      const hTrim = (header || '').toString().trim();
+      const hLower = hTrim.toLowerCase();
+      if (columnMapping[hTrim] !== undefined) {
+        rowData[index] = columnMapping[hTrim];
+      } else if (hLower.includes('supervisor')) {
+        rowData[index] = supervisorVal;
+      } else if (hLower.includes('date')) {
+        rowData[index] = dateVal;
+      } else if (hLower.includes('pcs') || hLower.includes('total')) {
+        rowData[index] = parseFloat(data.totalPcs) || 0;
+      }
+    });
+
+    sheet.appendRow(rowData);
+    const lastRow = sheet.getLastRow();
+
+    const wipIndex = currentHeaders.findIndex(h => {
+      const l = (h || '').toString().trim().toLowerCase();
+      return l.includes('wip') && (l.includes('press') || l.includes('iron'));
+    });
+    const completeIndex = currentHeaders.findIndex(h => {
+      const l = (h || '').toString().trim().toLowerCase();
+      return (l.includes('complete') || l.includes('completed')) && (l.includes('press') || l.includes('iron'));
+    });
+
+    if (wipIndex !== -1) sheet.getRange(lastRow, wipIndex + 1).setValue('[]');
+    if (completeIndex !== -1) sheet.getRange(lastRow, completeIndex + 1).setValue('[]');
+
+    SpreadsheetApp.flush();
+
+    return createJsonResponse({
+      ok: true,
+      message: `Press order saved to row ${lastRow}`,
+      lotNumber: data.lotNumber || data.lotNo
+    });
+
+  } catch (error) {
+    return createJsonResponse({
+      ok: false,
+      error: `Failed to save Press order: ${error.toString()}`
+    });
+  }
+}
+
+function updatePressManStatus(spreadsheet, data) {
+  try {
+    const sheet = spreadsheet.getSheetByName('Press') || spreadsheet.getSheetByName('PressMan') || spreadsheet.getSheetByName('Press Man');
+    if (!sheet) {
+      return createJsonResponse({
+        ok: false,
+        error: 'Press sheet not found'
+      });
+    }
+
+    let headers = sheet.getRange(1, 1, 1, Math.max(sheet.getLastColumn(), 1)).getValues()[0].map(h => (h || '').toString().trim());
+    const lotNumberCol = headers.findIndex(h => h.toLowerCase() === 'lot number') + 1;
+    let wipHistoryCol = headers.findIndex(h => {
+      const l = h.toLowerCase();
+      return l.includes('wip') && (l.includes('press') || l.includes('iron'));
+    }) + 1;
+    let completeHistoryCol = headers.findIndex(h => {
+      const l = h.toLowerCase();
+      return (l.includes('complete') || l.includes('completed')) && (l.includes('press') || l.includes('iron'));
+    }) + 1;
+
+    if (wipHistoryCol === 0) {
+      const nextCol = sheet.getLastColumn() + 1;
+      sheet.getRange(1, nextCol).setValue('WIP Press');
+      headers.push('WIP Press');
+      wipHistoryCol = nextCol;
+    }
+    if (completeHistoryCol === 0) {
+      const nextCol = sheet.getLastColumn() + 1;
+      sheet.getRange(1, nextCol).setValue('Press Complete');
+      headers.push('Press Complete');
+      completeHistoryCol = nextCol;
+    }
+
+    const lotNumber = (data.lotNumber || data.lotNo || '').toString().trim();
+    if (!lotNumber) {
+      return createJsonResponse({ ok: false, error: 'No lotNumber provided' });
+    }
+
+    const totalRows = sheet.getLastRow();
+    if (totalRows < 2) {
+      return createJsonResponse({ ok: false, error: 'No rows in Press sheet' });
+    }
+
+    const lotNumbers = sheet.getRange(2, lotNumberCol, totalRows - 1, 1).getValues().flat();
+    const lotRowIndex = lotNumbers.findIndex(num => (num || '').toString().trim() === lotNumber) + 2;
+
+    if (lotRowIndex < 2) {
+      return createJsonResponse({
+        ok: false,
+        error: `Lot ${lotNumber} not found in Press sheet`
+      });
+    }
+
+    const statusType = (data.statusType || 'wip').toLowerCase();
+    const status = data.status || 'Updated';
+    const remarks = data.remarks || '';
+    const supervisor = data.supervisor || data.pressSupervisor || data.pressManSupervisor || 'Unknown';
+    const timestamp = new Date().toISOString();
+
+    const historyEntry = {
+      status: status,
+      remarks: remarks,
+      supervisor: supervisor,
+      timestamp: timestamp,
+      date: new Date().toLocaleDateString('en-IN'),
+      time: new Date().toLocaleTimeString('en-IN')
+    };
+
+    if (statusType === 'wip' && wipHistoryCol > 0) {
+      const existingWip = sheet.getRange(lotRowIndex, wipHistoryCol).getValue();
+      let wipHistory = [];
+      if (existingWip && existingWip.toString().trim() !== '') {
+        try {
+          wipHistory = JSON.parse(existingWip);
+          if (!Array.isArray(wipHistory)) wipHistory = [wipHistory];
+        } catch (e) {
+          wipHistory = [{ status: existingWip, timestamp: new Date().toISOString() }];
+        }
+      }
+      wipHistory.unshift(historyEntry);
+      sheet.getRange(lotRowIndex, wipHistoryCol).setValue(JSON.stringify(wipHistory));
+
+    } else if (statusType === 'complete' && completeHistoryCol > 0) {
+      const existingComplete = sheet.getRange(lotRowIndex, completeHistoryCol).getValue();
+      let completeHistory = [];
+      if (existingComplete && existingComplete.toString().trim() !== '') {
+        try {
+          completeHistory = JSON.parse(existingComplete);
+          if (!Array.isArray(completeHistory)) completeHistory = [completeHistory];
+        } catch (e) {
+          completeHistory = [{ status: existingComplete, timestamp: new Date().toISOString() }];
+        }
+      }
+      completeHistory.unshift(historyEntry);
+      sheet.getRange(lotRowIndex, completeHistoryCol).setValue(JSON.stringify(completeHistory));
+
+      // Note: Press Date (Issue Date) is preserved and NEVER overwritten here
+
+      const reopenCols = ensureReopenColumns(sheet, headers);
+      if (reopenCols.reopenCol > 0) {
+        const curReopen = sheet.getRange(lotRowIndex, reopenCols.reopenCol).getValue();
+        if (curReopen && curReopen.toString().trim().toLowerCase() === 'yes') {
+          sheet.getRange(lotRowIndex, reopenCols.reopenCol).setValue('Completed');
+        }
+      }
+    } else if (statusType === 'reopen') {
+      if (completeHistoryCol > 0) {
+        sheet.getRange(lotRowIndex, completeHistoryCol).setValue('[]');
+      }
+      
+      // Note: Press Date (Issue Date) is preserved and NEVER wiped here
+
+      const reopenProcess = data.process || data.status || 'Pending';
+      const reopenCols = ensureReopenColumns(sheet, headers);
+      if (reopenCols.reopenCol > 0) sheet.getRange(lotRowIndex, reopenCols.reopenCol).setValue('Yes');
+      if (reopenCols.reopenDateCol > 0) sheet.getRange(lotRowIndex, reopenCols.reopenDateCol).setValue(formatDate(new Date()));
+      if (reopenCols.reopenProcessCol > 0) sheet.getRange(lotRowIndex, reopenCols.reopenProcessCol).setValue(reopenProcess);
+
+      const reopenEntry = {
+        status: `Reopened: ${reopenProcess}`,
+        action: 'reopen',
+        process: reopenProcess,
+        remarks: remarks || `Reopened for ${reopenProcess}`,
+        supervisor: supervisor,
+        timestamp: timestamp,
+        date: new Date().toLocaleDateString('en-IN'),
+        time: new Date().toLocaleTimeString('en-IN')
+      };
+      const existingWip = sheet.getRange(lotRowIndex, wipHistoryCol).getValue();
+      let wipHistory = [];
+      if (existingWip && existingWip.toString().trim() !== '') {
+        try {
+          wipHistory = JSON.parse(existingWip);
+          if (!Array.isArray(wipHistory)) wipHistory = [wipHistory];
+        } catch (e) {
+          wipHistory = [{ status: existingWip, timestamp: timestamp }];
+        }
+      }
+      wipHistory.unshift(reopenEntry);
+      sheet.getRange(lotRowIndex, wipHistoryCol).setValue(JSON.stringify(wipHistory));
+    }
+
+    SpreadsheetApp.flush();
+
+    return createJsonResponse({
+      ok: true,
+      message: `Press ${statusType} status updated successfully`,
+      lotNumber: lotNumber,
+      status: status
+    });
+
+  } catch (error) {
+    return createJsonResponse({
+      ok: false,
+      error: `Failed to update Press status: ${error.toString()}`
+    });
+  }
+}
+
+function getPressManLots(spreadsheet, data) {
+  try {
+    const sheet = spreadsheet.getSheetByName('Press') || spreadsheet.getSheetByName('PressMan') || spreadsheet.getSheetByName('Press Man');
+    if (!sheet || sheet.getLastRow() < 2) {
+      return createJsonResponse({
+        ok: true,
+        lots: [],
+        total: 0,
+        message: 'No Press data found'
+      });
+    }
+
+    const supervisorName = (data.supervisor || '').toLowerCase().trim();
+    const headers = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0];
+    const dataRange = sheet.getRange(2, 1, sheet.getLastRow() - 1, headers.length);
+    const rows = dataRange.getValues();
+
+    const lots = rows.map((row, index) => {
+      const lot = {};
+      headers.forEach((header, colIndex) => {
+        lot[header] = row[colIndex] || '';
+      });
+
+      let wipHistory = [];
+      let completeHistory = [];
+
+      const wipRaw = lot['WIP Press'] || lot['WIP Press Man'] || lot['WIP Iron'] || '';
+      if (wipRaw) {
+        try {
+          const parsed = JSON.parse(wipRaw);
+          wipHistory = Array.isArray(parsed) ? parsed : [parsed];
+        } catch (e) { wipHistory = []; }
+      }
+
+      const completeRaw = lot['Press Complete'] || lot['Press Man Complete'] || lot['Iron Complete'] || '';
+      if (completeRaw) {
+        try {
+          const parsed = JSON.parse(completeRaw);
+          completeHistory = Array.isArray(parsed) ? parsed : [parsed];
+        } catch (e) { completeHistory = []; }
+      }
+
+      let currentStatus = 'Ready for Press';
+      let isCompleted = false;
+      let isInProgress = false;
+
+      if (wipHistory.length > 0 && (wipHistory[0].action === 'reopen' || (wipHistory[0].status && wipHistory[0].status.toString().toLowerCase().includes('reopen')))) {
+        currentStatus = wipHistory[0].status;
+        isCompleted = false;
+        isInProgress = false;
+      } else if (completeHistory.length > 0) {
+        const latestComplete = completeHistory[0];
+        if (latestComplete.status.includes('Completed') || latestComplete.status.includes('Complete')) {
+          currentStatus = 'Press Completed';
+          isCompleted = true;
+        } else {
+          currentStatus = latestComplete.status;
+          isInProgress = true;
+        }
+      } else if (wipHistory.length > 0) {
+        currentStatus = wipHistory[0].status;
+        isInProgress = true;
+      }
+
+      return {
+        ...lot,
+        id: index + 1,
+        currentStatus: currentStatus,
+        isCompleted: isCompleted,
+        isInProgress: isInProgress,
+        wipHistory: wipHistory,
+        completeHistory: completeHistory,
+        lastUpdated: wipHistory.length > 0 ? wipHistory[0].timestamp : 
+                    completeHistory.length > 0 ? completeHistory[0].timestamp : ''
+      };
+    });
+
+    const filteredLots = supervisorName 
+      ? lots.filter(lot => {
+          const lotSupervisor = (lot['Press Supervisor'] || lot['Press Man Supervisor'] || '').toLowerCase().trim();
+          return lotSupervisor.includes(supervisorName);
+        })
+      : lots;
+
+    return createJsonResponse({
+      ok: true,
+      lots: filteredLots,
+      total: filteredLots.length
+    });
+
+  } catch (error) {
+    return createJsonResponse({
+      ok: false,
+      error: `Failed to get Press lots: ${error.toString()}`,
+      lots: []
+    });
+  }
+}
+
 // ============ FEED UP FUNCTIONS ============
 function saveFeedUpOrder(spreadsheet, data) {
   try {
@@ -426,13 +1644,8 @@ function updateFeedUpStatus(spreadsheet, data) {
       }
       completeHistory.unshift(historyEntry);
       sheet.getRange(lotRowIndex, finalCompleteCol).setValue(JSON.stringify(completeHistory));
-      
-      if (status === 'Feed Up Completed') {
-        const feedUpDateCol = updatedHeaders.indexOf('Feed Up Date') + 1;
-        if (feedUpDateCol > 0) {
-          sheet.getRange(lotRowIndex, feedUpDateCol).setValue(new Date().toISOString().split('T')[0]);
-        }
-      }
+
+      // Note: Feed Up Date (Issue Date) is preserved and NEVER overwritten here
 
       const reopenCols = ensureReopenColumns(sheet, updatedHeaders);
       if (reopenCols.reopenCol > 0) {
@@ -445,10 +1658,8 @@ function updateFeedUpStatus(spreadsheet, data) {
       if (finalCompleteCol > 0) {
         sheet.getRange(lotRowIndex, finalCompleteCol).setValue('[]');
       }
-      const feedUpDateCol = updatedHeaders.indexOf('Feed Up Date') + 1;
-      if (feedUpDateCol > 0) {
-        sheet.getRange(lotRowIndex, feedUpDateCol).setValue('');
-      }
+      
+      // Note: Feed Up Date (Issue Date) is preserved and NEVER wiped here
 
       const reopenProcess = data.process || data.status || 'Pending';
       const reopenCols = ensureReopenColumns(sheet, updatedHeaders);
@@ -535,7 +1746,7 @@ function getFeedUpLots(spreadsheet, data) {
         isInProgress = false;
       } else if (completeHistory.length > 0) {
         const latestComplete = completeHistory[0];
-        if (latestComplete.status === 'Feed Up Completed' || latestComplete.status.includes('Complete')) {
+        if (latestComplete.status === 'Feed Up Completed') {
           currentStatus = 'Feed Up Completed';
           isCompleted = true;
         } else {
@@ -796,10 +2007,7 @@ function updateKajButtonStatus(spreadsheet, data) {
       completeHistory.unshift(historyEntry);
       sheet.getRange(lotRowIndex, completeHistoryCol).setValue(JSON.stringify(completeHistory));
 
-      const kajButtonDateCol = headers.findIndex(h => h.toLowerCase() === 'kajbutton date') + 1;
-      if (kajButtonDateCol > 0) {
-        sheet.getRange(lotRowIndex, kajButtonDateCol).setValue(new Date().toISOString().split('T')[0]);
-      }
+      // Note: KajButton Date (Issue Date) is preserved and NEVER overwritten here
 
       const reopenCols = ensureReopenColumns(sheet, headers);
       if (reopenCols.reopenCol > 0) {
@@ -827,10 +2035,8 @@ function updateKajButtonStatus(spreadsheet, data) {
       if (completeHistoryCol > 0) {
         sheet.getRange(lotRowIndex, completeHistoryCol).setValue('[]');
       }
-      const kajButtonDateCol = headers.findIndex(h => h.toLowerCase() === 'kajbutton date') + 1;
-      if (kajButtonDateCol > 0) {
-        sheet.getRange(lotRowIndex, kajButtonDateCol).setValue('');
-      }
+      
+      // Note: KajButton Date (Issue Date) is preserved and NEVER wiped here
 
       const reopenCols = ensureReopenColumns(sheet, headers);
       headers = reopenCols.headers;
@@ -1234,11 +2440,9 @@ function updateJaybirEmbroideryStatus(spreadsheet, data) {
       }
       completeHistory.unshift(historyEntry);
       sheet.getRange(lotRowIndex, completeHistoryCol).setValue(JSON.stringify(completeHistory));
-      
-      const embDateCol = headers.findIndex(h => h.toLowerCase() === 'embroidery date') + 1;
-      if (embDateCol > 0) {
-        sheet.getRange(lotRowIndex, embDateCol).setValue(new Date().toISOString().split('T')[0]);
-      }
+
+      // Note: Embroidery Date (Issue Date) is preserved and NEVER overwritten here
+
       const supervisorCol = headers.findIndex(h => h.toLowerCase() === 'embroidery supervisor') + 1;
       if (supervisorCol > 0 && supervisor) {
         sheet.getRange(lotRowIndex, supervisorCol).setValue(supervisor);
@@ -1255,10 +2459,8 @@ function updateJaybirEmbroideryStatus(spreadsheet, data) {
       if (completeHistoryCol > 0) {
         sheet.getRange(lotRowIndex, completeHistoryCol).setValue('[]');
       }
-      const embDateCol = headers.findIndex(h => h.toLowerCase() === 'embroidery date') + 1;
-      if (embDateCol > 0) {
-        sheet.getRange(lotRowIndex, embDateCol).setValue('');
-      }
+      
+      // Note: Embroidery Date (Issue Date) is preserved and NEVER wiped here
 
       const reopenProcess = data.process || data.status || 'Pending';
       const reopenCols = ensureReopenColumns(sheet, headers);
@@ -1588,11 +2790,9 @@ function updateJaybirPrintingStatus(spreadsheet, data) {
       }
       completeHistory.unshift(historyEntry);
       sheet.getRange(lotRowIndex, completeHistoryCol).setValue(JSON.stringify(completeHistory));
-      
-      const printDateCol = headers.findIndex(h => h.toLowerCase() === 'printing date') + 1;
-      if (printDateCol > 0) {
-        sheet.getRange(lotRowIndex, printDateCol).setValue(new Date().toISOString().split('T')[0]);
-      }
+
+      // Note: Printing Date (Issue Date) is preserved and NEVER overwritten here
+
       const supervisorCol = headers.findIndex(h => h.toLowerCase() === 'printing supervisor') + 1;
       if (supervisorCol > 0 && supervisor) {
         sheet.getRange(lotRowIndex, supervisorCol).setValue(supervisor);
@@ -1609,10 +2809,8 @@ function updateJaybirPrintingStatus(spreadsheet, data) {
       if (completeHistoryCol > 0) {
         sheet.getRange(lotRowIndex, completeHistoryCol).setValue('[]');
       }
-      const printDateCol = headers.findIndex(h => h.toLowerCase() === 'printing date') + 1;
-      if (printDateCol > 0) {
-        sheet.getRange(lotRowIndex, printDateCol).setValue('');
-      }
+      
+      // Note: Printing Date (Issue Date) is preserved and NEVER wiped here
 
       const reopenProcess = data.process || data.status || 'Pending';
       const reopenCols = ensureReopenColumns(sheet, headers);
@@ -1912,13 +3110,8 @@ function updateElasticStatus(spreadsheet, data) {
       }
       completeHistory.unshift(historyEntry);
       sheet.getRange(lotRowIndex, finalCompleteCol).setValue(JSON.stringify(completeHistory));
-      
-      if (status === 'Elastic Completed') {
-        const elasticDateCol = updatedHeaders.indexOf('Elastic Date') + 1;
-        if (elasticDateCol > 0) {
-          sheet.getRange(lotRowIndex, elasticDateCol).setValue(new Date().toISOString().split('T')[0]);
-        }
-      }
+
+      // Note: Elastic Date (Issue Date) is preserved and NEVER overwritten here
 
       const reopenCols = ensureReopenColumns(sheet, updatedHeaders);
       if (reopenCols.reopenCol > 0) {
@@ -1931,10 +3124,8 @@ function updateElasticStatus(spreadsheet, data) {
       if (finalCompleteCol > 0) {
         sheet.getRange(lotRowIndex, finalCompleteCol).setValue('[]');
       }
-      const elasticDateCol = updatedHeaders.indexOf('Elastic Date') + 1;
-      if (elasticDateCol > 0) {
-        sheet.getRange(lotRowIndex, elasticDateCol).setValue('');
-      }
+      
+      // Note: Elastic Date (Issue Date) is preserved and NEVER wiped here
 
       const reopenProcess = data.process || data.status || 'Pending';
       const reopenCols = ensureReopenColumns(sheet, updatedHeaders);
@@ -2075,322 +3266,6 @@ function getElasticLots(spreadsheet, data) {
     return createJsonResponse({
       ok: false,
       error: `Failed to get Elastic lots: ${error.toString()}`,
-      lots: []
-    });
-  }
-}
-
-// ============ WASHING FUNCTIONS ============
-function saveWashingOrder(spreadsheet, data) {
-  try {
-    let sheet = spreadsheet.getSheetByName('Washing');
-    if (!sheet) {
-      sheet = spreadsheet.insertSheet('Washing');
-      sheet.appendRow([
-        'Timestamp', 'Lot Number', 'Garment Type', 'Fabric', 
-        'Style', 'Brand', 'Washing Supervisor', 'Washing Date', 'Total Pcs',
-        'WIP Washing', 'Washing Complete', 'Total Manpower', 'Selected Colors'
-      ]);
-    } else {
-      const headers = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0];
-      const requiredHeaders = [
-        'Timestamp', 'Lot Number', 'Garment Type', 'Fabric', 'Style', 'Brand',
-        'Washing Supervisor', 'Washing Date', 'Total Pcs', 
-        'WIP Washing', 'Washing Complete', 'Total Manpower', 'Selected Colors'
-      ];
-      requiredHeaders.forEach((header, index) => {
-        if (!headers.includes(header)) {
-          sheet.getRange(1, index + 1).setValue(header);
-        }
-      });
-    }
-    
-    const currentHeaders = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0];
-    const rowData = new Array(currentHeaders.length).fill('');
-    
-    const columnMapping = {
-      'Timestamp': new Date(data.timestamp || new Date().toISOString()),
-      'Lot Number': data.lotNumber || data.lotNo || '',
-      'Garment Type': data.garmentType || '',
-      'Fabric': data.fabric || '',
-      'Style': data.style || '',
-      'Brand': data.brand || '',
-      'Washing Supervisor': data.washingSupervisor || data.supervisor || '',
-      'Washing Date': data.washingDate || data.issueDate || '',
-      'Total Pcs': parseFloat(data.totalPcs) || 0,
-      'Total Manpower': data.totalManpower || '0',
-      'Selected Colors': Array.isArray(data.selectedColors) ? data.selectedColors.join(', ') : (data.selectedColors || '')
-    };
-    
-    currentHeaders.forEach((header, index) => {
-      if (columnMapping[header] !== undefined) {
-        rowData[index] = columnMapping[header];
-      }
-    });
-    
-    sheet.appendRow(rowData);
-    const lastRow = sheet.getLastRow();
-    
-    const wipIndex = currentHeaders.indexOf('WIP Washing');
-    const completeIndex = currentHeaders.indexOf('Washing Complete');
-    
-    if (wipIndex !== -1) sheet.getRange(lastRow, wipIndex + 1).setValue('[]');
-    if (completeIndex !== -1) sheet.getRange(lastRow, completeIndex + 1).setValue('[]');
-    
-    SpreadsheetApp.flush();
-
-    return createJsonResponse({
-      ok: true,
-      message: `Washing order saved to row ${lastRow}`,
-      lotNumber: data.lotNumber || data.lotNo
-    });
-    
-  } catch (error) {
-    return createJsonResponse({
-      ok: false,
-      error: `Failed to save Washing order: ${error.toString()}`
-    });
-  }
-}
-
-function updateWashingStatus(spreadsheet, data) {
-  try {
-    const sheet = spreadsheet.getSheetByName('Washing');
-    if (!sheet) {
-      return createJsonResponse({
-        ok: false,
-        error: 'Washing sheet not found'
-      });
-    }
-    
-    const headers = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0];
-    const lotNumberCol = headers.indexOf('Lot Number') + 1;
-    const wipHistoryCol = headers.indexOf('WIP Washing') + 1;
-    const completeHistoryCol = headers.indexOf('Washing Complete') + 1;
-    
-    if (wipHistoryCol === 0) sheet.getRange(1, headers.length + 1).setValue('WIP Washing');
-    if (completeHistoryCol === 0) sheet.getRange(1, headers.length + 2).setValue('Washing Complete');
-    
-    const updatedHeaders = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0];
-    const finalWipCol = updatedHeaders.indexOf('WIP Washing') + 1;
-    const finalCompleteCol = updatedHeaders.indexOf('Washing Complete') + 1;
-    
-    const lotNumber = data.lotNumber;
-    const lotNumbers = sheet.getRange(2, lotNumberCol, sheet.getLastRow() - 1, 1).getValues().flat();
-    const lotRowIndex = lotNumbers.findIndex(num => num.toString() === lotNumber.toString()) + 2;
-    
-    if (lotRowIndex < 2) {
-      return createJsonResponse({
-        ok: false,
-        error: `Lot ${lotNumber} not found in Washing sheet`
-      });
-    }
-    
-    const statusType = (data.statusType || 'wip').toLowerCase();
-    const status = data.status;
-    const remarks = data.remarks || '';
-    const supervisor = data.supervisor || 'Unknown';
-    const timestamp = new Date().toISOString();
-    
-    const historyEntry = {
-      status: status,
-      remarks: remarks,
-      supervisor: supervisor,
-      timestamp: timestamp,
-      date: new Date().toLocaleDateString('en-IN'),
-      time: new Date().toLocaleTimeString('en-IN')
-    };
-    
-    if (statusType === 'wip') {
-      const existingWip = sheet.getRange(lotRowIndex, finalWipCol).getValue();
-      let wipHistory = [];
-      if (existingWip && existingWip.trim() !== '') {
-        try {
-          wipHistory = JSON.parse(existingWip);
-          if (!Array.isArray(wipHistory)) wipHistory = [wipHistory];
-        } catch (e) {
-          wipHistory = [{status: existingWip, timestamp: new Date().toISOString()}];
-        }
-      }
-      wipHistory.unshift(historyEntry);
-      sheet.getRange(lotRowIndex, finalWipCol).setValue(JSON.stringify(wipHistory));
-      
-    } else if (statusType === 'complete') {
-      const existingComplete = sheet.getRange(lotRowIndex, finalCompleteCol).getValue();
-      let completeHistory = [];
-      if (existingComplete && existingComplete.trim() !== '') {
-        try {
-          completeHistory = JSON.parse(existingComplete);
-          if (!Array.isArray(completeHistory)) completeHistory = [completeHistory];
-        } catch (e) {
-          completeHistory = [{status: existingComplete, timestamp: new Date().toISOString()}];
-        }
-      }
-      completeHistory.unshift(historyEntry);
-      sheet.getRange(lotRowIndex, finalCompleteCol).setValue(JSON.stringify(completeHistory));
-      
-      if (status === 'Washing Completed') {
-        const washingDateCol = updatedHeaders.indexOf('Washing Date') + 1;
-        if (washingDateCol > 0) {
-          sheet.getRange(lotRowIndex, washingDateCol).setValue(new Date().toISOString().split('T')[0]);
-        }
-      }
-
-      const reopenCols = ensureReopenColumns(sheet, updatedHeaders);
-      if (reopenCols.reopenCol > 0) {
-        const curReopen = sheet.getRange(lotRowIndex, reopenCols.reopenCol).getValue();
-        if (curReopen && curReopen.toString().trim().toLowerCase() === 'yes') {
-          sheet.getRange(lotRowIndex, reopenCols.reopenCol).setValue('Completed');
-        }
-      }
-    } else if (statusType === 'reopen') {
-      if (finalCompleteCol > 0) {
-        sheet.getRange(lotRowIndex, finalCompleteCol).setValue('[]');
-      }
-      const washingDateCol = updatedHeaders.indexOf('Washing Date') + 1;
-      if (washingDateCol > 0) {
-        sheet.getRange(lotRowIndex, washingDateCol).setValue('');
-      }
-
-      const reopenProcess = data.process || data.status || 'Pending';
-      const reopenCols = ensureReopenColumns(sheet, updatedHeaders);
-      if (reopenCols.reopenCol > 0) sheet.getRange(lotRowIndex, reopenCols.reopenCol).setValue('Yes');
-      if (reopenCols.reopenDateCol > 0) sheet.getRange(lotRowIndex, reopenCols.reopenDateCol).setValue(formatDate(new Date()));
-      if (reopenCols.reopenProcessCol > 0) sheet.getRange(lotRowIndex, reopenCols.reopenProcessCol).setValue(reopenProcess);
-
-      const reopenEntry = {
-        status: `Reopened: ${reopenProcess}`,
-        action: 'reopen',
-        process: reopenProcess,
-        remarks: remarks || `Reopened for ${reopenProcess}`,
-        supervisor: supervisor,
-        timestamp: timestamp,
-        date: new Date().toLocaleDateString('en-IN'),
-        time: new Date().toLocaleTimeString('en-IN')
-      };
-      const existingWip = sheet.getRange(lotRowIndex, finalWipCol).getValue();
-      let wipHistory = [];
-      if (existingWip && existingWip.trim() !== '') {
-        try {
-          wipHistory = JSON.parse(existingWip);
-          if (!Array.isArray(wipHistory)) wipHistory = [wipHistory];
-        } catch (e) {
-          wipHistory = [{status: existingWip, timestamp: timestamp}];
-        }
-      }
-      wipHistory.unshift(reopenEntry);
-      sheet.getRange(lotRowIndex, finalWipCol).setValue(JSON.stringify(wipHistory));
-    }
-    
-    SpreadsheetApp.flush();
-
-    return createJsonResponse({
-      ok: true,
-      message: `Washing ${statusType} status updated successfully`,
-      lotNumber: lotNumber,
-      status: status
-    });
-    
-  } catch (error) {
-    return createJsonResponse({
-      ok: false,
-      error: `Failed to update Washing status: ${error.toString()}`
-    });
-  }
-}
-
-function getWashingLots(spreadsheet, data) {
-  try {
-    const sheet = spreadsheet.getSheetByName('Washing');
-    if (!sheet || sheet.getLastRow() < 2) {
-      return createJsonResponse({
-        ok: true,
-        lots: [],
-        total: 0,
-        message: 'No Washing data found'
-      });
-    }
-    
-    const supervisorName = (data.supervisor || '').toLowerCase().trim();
-    const headers = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0];
-    const dataRange = sheet.getRange(2, 1, sheet.getLastRow() - 1, headers.length);
-    const rows = dataRange.getValues();
-    
-    const lots = rows.map((row, index) => {
-      const lot = {};
-      headers.forEach((header, colIndex) => {
-        lot[header] = row[colIndex] || '';
-      });
-      
-      let wipHistory = [];
-      let completeHistory = [];
-      
-      if (lot['WIP Washing']) {
-        try {
-          const parsed = JSON.parse(lot['WIP Washing']);
-          wipHistory = Array.isArray(parsed) ? parsed : [parsed];
-        } catch (e) { wipHistory = []; }
-      }
-      
-      if (lot['Washing Complete']) {
-        try {
-          const parsed = JSON.parse(lot['Washing Complete']);
-          completeHistory = Array.isArray(parsed) ? parsed : [parsed];
-        } catch (e) { completeHistory = []; }
-      }
-      
-      let currentStatus = 'Ready for Washing';
-      let isCompleted = false;
-      let isInProgress = false;
-      
-      if (wipHistory.length > 0 && (wipHistory[0].action === 'reopen' || (wipHistory[0].status && wipHistory[0].status.toString().toLowerCase().includes('reopen')))) {
-        currentStatus = wipHistory[0].status;
-        isCompleted = false;
-        isInProgress = false;
-      } else if (completeHistory.length > 0) {
-        const latestComplete = completeHistory[0];
-        if (latestComplete.status === 'Washing Completed') {
-          currentStatus = 'Washing Completed';
-          isCompleted = true;
-        } else {
-          currentStatus = latestComplete.status;
-          isInProgress = true;
-        }
-      } else if (wipHistory.length > 0) {
-        currentStatus = wipHistory[0].status;
-        isInProgress = true;
-      }
-      
-      return {
-        ...lot,
-        id: index + 1,
-        currentStatus: currentStatus,
-        isCompleted: isCompleted,
-        isInProgress: isInProgress,
-        wipHistory: wipHistory,
-        completeHistory: completeHistory,
-        lastUpdated: wipHistory.length > 0 ? wipHistory[0].timestamp : 
-                    completeHistory.length > 0 ? completeHistory[0].timestamp : ''
-      };
-    });
-    
-    const filteredLots = supervisorName 
-      ? lots.filter(lot => {
-          const lotSupervisor = (lot['Washing Supervisor'] || '').toLowerCase().trim();
-          return lotSupervisor.includes(supervisorName);
-        })
-      : lots;
-    
-    return createJsonResponse({
-      ok: true,
-      lots: filteredLots,
-      total: filteredLots.length
-    });
-    
-  } catch (error) {
-    return createJsonResponse({
-      ok: false,
-      error: `Failed to get Washing lots: ${error.toString()}`,
       lots: []
     });
   }
@@ -2543,13 +3418,8 @@ function updateBoneStatus(spreadsheet, data) {
       }
       completeHistory.unshift(historyEntry);
       sheet.getRange(lotRowIndex, finalCompleteCol).setValue(JSON.stringify(completeHistory));
-      
-      if (status === 'Bone Completed') {
-        const boneDateCol = updatedHeaders.indexOf('Bone Date') + 1;
-        if (boneDateCol > 0) {
-          sheet.getRange(lotRowIndex, boneDateCol).setValue(new Date().toISOString().split('T')[0]);
-        }
-      }
+
+      // Note: Bone Date (Issue Date) is preserved and NEVER overwritten here
 
       const reopenCols = ensureReopenColumns(sheet, updatedHeaders);
       if (reopenCols.reopenCol > 0) {
@@ -2562,10 +3432,8 @@ function updateBoneStatus(spreadsheet, data) {
       if (finalCompleteCol > 0) {
         sheet.getRange(lotRowIndex, finalCompleteCol).setValue('[]');
       }
-      const boneDateCol = updatedHeaders.indexOf('Bone Date') + 1;
-      if (boneDateCol > 0) {
-        sheet.getRange(lotRowIndex, boneDateCol).setValue('');
-      }
+      
+      // Note: Bone Date (Issue Date) is preserved and NEVER wiped here
 
       const reopenProcess = data.process || data.status || 'Pending';
       const reopenCols = ensureReopenColumns(sheet, updatedHeaders);
@@ -2857,13 +3725,8 @@ function updateOverlockStatus(spreadsheet, data) {
       }
       completeHistory.unshift(historyEntry);
       sheet.getRange(lotRowIndex, finalCompleteCol).setValue(JSON.stringify(completeHistory));
-      
-      if (status === 'Overlock Completed') {
-        const overlockDateCol = updatedHeaders.indexOf('Overlock Date') + 1;
-        if (overlockDateCol > 0) {
-          sheet.getRange(lotRowIndex, overlockDateCol).setValue(new Date().toISOString().split('T')[0]);
-        }
-      }
+
+      // Note: Overlock Date (Issue Date) is preserved and NEVER overwritten here
 
       const reopenCols = ensureReopenColumns(sheet, updatedHeaders);
       if (reopenCols.reopenCol > 0) {
@@ -2876,10 +3739,8 @@ function updateOverlockStatus(spreadsheet, data) {
       if (finalCompleteCol > 0) {
         sheet.getRange(lotRowIndex, finalCompleteCol).setValue('[]');
       }
-      const overlockDateCol = updatedHeaders.indexOf('Overlock Date') + 1;
-      if (overlockDateCol > 0) {
-        sheet.getRange(lotRowIndex, overlockDateCol).setValue('');
-      }
+      
+      // Note: Overlock Date (Issue Date) is preserved and NEVER wiped here
 
       const reopenProcess = data.process || data.status || 'Pending';
       const reopenCols = ensureReopenColumns(sheet, updatedHeaders);
@@ -3170,13 +4031,8 @@ function updateFoldingStatus(spreadsheet, data) {
       }
       completeHistory.unshift(historyEntry);
       sheet.getRange(lotRowIndex, finalCompleteCol).setValue(JSON.stringify(completeHistory));
-      
-      if (status === 'Folding Completed') {
-        const foldingDateCol = updatedHeaders.indexOf('Folding Date') + 1;
-        if (foldingDateCol > 0) {
-          sheet.getRange(lotRowIndex, foldingDateCol).setValue(new Date().toISOString().split('T')[0]);
-        }
-      }
+
+      // Note: Folding Date (Issue Date) is preserved and NEVER overwritten here
 
       const reopenCols = ensureReopenColumns(sheet, updatedHeaders);
       if (reopenCols.reopenCol > 0) {
@@ -3189,10 +4045,8 @@ function updateFoldingStatus(spreadsheet, data) {
       if (finalCompleteCol > 0) {
         sheet.getRange(lotRowIndex, finalCompleteCol).setValue('[]');
       }
-      const foldingDateCol = updatedHeaders.indexOf('Folding Date') + 1;
-      if (foldingDateCol > 0) {
-        sheet.getRange(lotRowIndex, foldingDateCol).setValue('');
-      }
+      
+      // Note: Folding Date (Issue Date) is preserved and NEVER wiped here
 
       const reopenProcess = data.process || data.status || 'Pending';
       const reopenCols = ensureReopenColumns(sheet, updatedHeaders);
@@ -3463,13 +4317,8 @@ function updatePackingStatus(spreadsheet, data) {
       }
       completeHistory.unshift(historyEntry);
       sheet.getRange(lotRowIndex, finalCompleteCol).setValue(JSON.stringify(completeHistory));
-      
-      if (status === 'Packing Completed') {
-        const packingDateCol = updatedHeaders.indexOf('Packing Date') + 1;
-        if (packingDateCol > 0) {
-          sheet.getRange(lotRowIndex, packingDateCol).setValue(new Date().toISOString().split('T')[0]);
-        }
-      }
+
+      // Note: Packing Date (Issue Date) is preserved and NEVER overwritten here
 
       const reopenCols = ensureReopenColumns(sheet, updatedHeaders);
       if (reopenCols.reopenCol > 0) {
@@ -3482,10 +4331,8 @@ function updatePackingStatus(spreadsheet, data) {
       if (finalCompleteCol > 0) {
         sheet.getRange(lotRowIndex, finalCompleteCol).setValue('[]');
       }
-      const packingDateCol = updatedHeaders.indexOf('Packing Date') + 1;
-      if (packingDateCol > 0) {
-        sheet.getRange(lotRowIndex, packingDateCol).setValue('');
-      }
+      
+      // Note: Packing Date (Issue Date) is preserved and NEVER wiped here
 
       const reopenProcess = data.process || data.status || 'Pending';
       const reopenCols = ensureReopenColumns(sheet, updatedHeaders);
@@ -3705,6 +4552,621 @@ function saveMaterialOrder(spreadsheet, data) {
   }
 }
 
+// ============ FILLING FUNCTIONS ============
+function saveFillingOrder(spreadsheet, data) {
+  try {
+    let sheet = spreadsheet.getSheetByName('Filling');
+    if (!sheet) {
+      sheet = spreadsheet.insertSheet('Filling');
+      sheet.appendRow([
+        'Timestamp', 'Lot Number', 'Garment Type', 'Fabric', 
+        'Style', 'Brand', 'Filling Supervisor', 'Filling Date', 'Total Pcs',
+        'WIP Filling', 'Filling Complete', 'Total Manpower',
+        'Process', 'REOPEN', 'REOPEN DATE', 'REOPEN FOR WHICH PROCESS'
+      ]);
+    } else {
+      let headers = sheet.getRange(1, 1, 1, Math.max(sheet.getLastColumn(), 1)).getValues()[0];
+      const requiredHeaders = [
+        'Timestamp', 'Lot Number', 'Garment Type', 'Fabric', 'Style', 'Brand', 
+        'Filling Supervisor', 'Filling Date', 'Total Pcs', 
+        'WIP Filling', 'Filling Complete', 'Total Manpower'
+      ];
+      requiredHeaders.forEach((header) => {
+        const found = headers.some(h => (h || '').toString().trim().toLowerCase() === header.toLowerCase());
+        if (!found) {
+          const nextCol = sheet.getLastColumn() + 1;
+          sheet.getRange(1, nextCol).setValue(header);
+          headers.push(header);
+        }
+      });
+    }
+    
+    const currentHeaders = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0];
+    const rowData = new Array(currentHeaders.length).fill('');
+    
+    let processVal = '';
+    if (data.process) {
+      processVal = Array.isArray(data.process) ? data.process.join(', ') : data.process;
+    } else if (data.processes) {
+      processVal = Array.isArray(data.processes) ? data.processes.join(', ') : data.processes;
+    }
+
+    const columnMapping = {
+      'Timestamp': new Date(data.timestamp || new Date().toISOString()),
+      'Lot Number': data.lotNumber || data.lotNo || '',
+      'Garment Type': data.garmentType || '',
+      'Fabric': data.fabric || '',
+      'Style': data.style || '',
+      'Brand': data.brand || '',
+      'Filling Supervisor': data.fillingSupervisor || data.supervisor || '',
+      'Filling Date': data.fillingDate || data.issueDate || data.date || '',
+      'Total Pcs': parseFloat(data.totalPcs) || 0,
+      'Total Manpower': data.totalManpower || '0',
+      'Process': processVal
+    };
+    
+    currentHeaders.forEach((header, index) => {
+      const hTrim = (header || '').toString().trim();
+      const hLower = hTrim.toLowerCase();
+      if (columnMapping[hTrim] !== undefined) {
+        rowData[index] = columnMapping[hTrim];
+      } else if (hLower === 'filling supervisor' || hLower === 'supervisor') {
+        rowData[index] = columnMapping['Filling Supervisor'];
+      } else if (hLower === 'filling date' || hLower === 'date') {
+        rowData[index] = columnMapping['Filling Date'];
+      } else if (hLower === 'process') {
+        rowData[index] = processVal;
+      }
+    });
+    
+    sheet.appendRow(rowData);
+    const lastRow = sheet.getLastRow();
+    
+    const wipIndex = currentHeaders.findIndex(h => (h || '').toString().trim().toLowerCase() === 'wip filling');
+    const completeIndex = currentHeaders.findIndex(h => (h || '').toString().trim().toLowerCase() === 'filling complete');
+    
+    if (wipIndex !== -1) sheet.getRange(lastRow, wipIndex + 1).setValue('[]');
+    if (completeIndex !== -1) sheet.getRange(lastRow, completeIndex + 1).setValue('[]');
+    
+    SpreadsheetApp.flush();
+
+    return createJsonResponse({
+      ok: true,
+      message: `Filling order saved to row ${lastRow}`,
+      lotNumber: data.lotNumber || data.lotNo
+    });
+    
+  } catch (error) {
+    return createJsonResponse({
+      ok: false,
+      error: `Failed to save Filling order: ${error.toString()}`
+    });
+  }
+}
+
+function updateFillingStatus(spreadsheet, data) {
+  try {
+    const sheet = spreadsheet.getSheetByName('Filling');
+    if (!sheet) {
+      return createJsonResponse({ ok: false, error: 'Filling sheet not found' });
+    }
+    
+    const headers = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0];
+    const lotNumberCol = headers.findIndex(h => (h || '').toString().trim().toLowerCase() === 'lot number') + 1;
+    let wipHistoryCol = headers.findIndex(h => (h || '').toString().trim().toLowerCase() === 'wip filling' || (h || '').toString().trim().toLowerCase() === 'wip') + 1;
+    let completeHistoryCol = headers.findIndex(h => (h || '').toString().trim().toLowerCase() === 'filling complete' || (h || '').toString().trim().toLowerCase() === 'complete') + 1;
+    
+    if (wipHistoryCol === 0) {
+      wipHistoryCol = sheet.getLastColumn() + 1;
+      sheet.getRange(1, wipHistoryCol).setValue('WIP Filling');
+    }
+    if (completeHistoryCol === 0) {
+      completeHistoryCol = sheet.getLastColumn() + 1;
+      sheet.getRange(1, completeHistoryCol).setValue('Filling Complete');
+    }
+    
+    const updatedHeaders = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0];
+    const lotNumber = data.lotNumber;
+    const lotNumbers = sheet.getRange(2, lotNumberCol, Math.max(sheet.getLastRow() - 1, 1), 1).getValues().flat();
+    const lotRowIndex = lotNumbers.findIndex(num => num.toString().trim() === lotNumber.toString().trim()) + 2;
+    
+    if (lotRowIndex < 2) {
+      return createJsonResponse({ ok: false, error: `Lot ${lotNumber} not found in Filling sheet` });
+    }
+    
+    const statusType = (data.statusType || 'wip').toLowerCase();
+    const status = data.status;
+    const remarks = data.remarks || '';
+    const supervisor = data.supervisor || 'Unknown';
+    const timestamp = new Date().toISOString();
+    
+    const historyEntry = {
+      status: status,
+      remarks: remarks,
+      supervisor: supervisor,
+      timestamp: timestamp,
+      date: new Date().toLocaleDateString('en-IN'),
+      time: new Date().toLocaleTimeString('en-IN')
+    };
+    
+    if (statusType === 'wip') {
+      const existingWip = sheet.getRange(lotRowIndex, wipHistoryCol).getValue();
+      let wipHistory = [];
+      if (existingWip && existingWip.toString().trim() !== '') {
+        try {
+          wipHistory = JSON.parse(existingWip);
+          if (!Array.isArray(wipHistory)) wipHistory = [wipHistory];
+        } catch (e) {
+          wipHistory = [{status: existingWip, timestamp: timestamp}];
+        }
+      }
+      wipHistory.unshift(historyEntry);
+      sheet.getRange(lotRowIndex, wipHistoryCol).setValue(JSON.stringify(wipHistory));
+      
+    } else if (statusType === 'complete') {
+      const existingComplete = sheet.getRange(lotRowIndex, completeHistoryCol).getValue();
+      let completeHistory = [];
+      if (existingComplete && existingComplete.toString().trim() !== '') {
+        try {
+          completeHistory = JSON.parse(existingComplete);
+          if (!Array.isArray(completeHistory)) completeHistory = [completeHistory];
+        } catch (e) {
+          completeHistory = [{status: existingComplete, timestamp: timestamp}];
+        }
+      }
+      completeHistory.unshift(historyEntry);
+      sheet.getRange(lotRowIndex, completeHistoryCol).setValue(JSON.stringify(completeHistory));
+      
+      const reopenCols = ensureReopenColumns(sheet, updatedHeaders);
+      if (reopenCols.reopenCol > 0) {
+        const curReopen = sheet.getRange(lotRowIndex, reopenCols.reopenCol).getValue();
+        if (curReopen && curReopen.toString().trim().toLowerCase() === 'yes') {
+          sheet.getRange(lotRowIndex, reopenCols.reopenCol).setValue('Completed');
+        }
+      }
+    } else if (statusType === 'reopen') {
+      if (completeHistoryCol > 0) {
+        sheet.getRange(lotRowIndex, completeHistoryCol).setValue('[]');
+      }
+      const reopenProcess = data.process || data.status || 'Pending';
+      const reopenCols = ensureReopenColumns(sheet, updatedHeaders);
+      if (reopenCols.reopenCol > 0) sheet.getRange(lotRowIndex, reopenCols.reopenCol).setValue('Yes');
+      if (reopenCols.reopenDateCol > 0) sheet.getRange(lotRowIndex, reopenCols.reopenDateCol).setValue(formatDate(new Date()));
+      if (reopenCols.reopenProcessCol > 0) sheet.getRange(lotRowIndex, reopenCols.reopenProcessCol).setValue(reopenProcess);
+
+      const reopenEntry = {
+        status: `Reopened: ${reopenProcess}`,
+        action: 'reopen',
+        process: reopenProcess,
+        remarks: remarks || `Reopened for ${reopenProcess}`,
+        supervisor: supervisor,
+        timestamp: timestamp,
+        date: new Date().toLocaleDateString('en-IN'),
+        time: new Date().toLocaleTimeString('en-IN')
+      };
+      const existingWip = sheet.getRange(lotRowIndex, wipHistoryCol).getValue();
+      let wipHistory = [];
+      if (existingWip && existingWip.toString().trim() !== '') {
+        try {
+          wipHistory = JSON.parse(existingWip);
+          if (!Array.isArray(wipHistory)) wipHistory = [wipHistory];
+        } catch (e) {
+          wipHistory = [{status: existingWip, timestamp: timestamp}];
+        }
+      }
+      wipHistory.unshift(reopenEntry);
+      sheet.getRange(lotRowIndex, wipHistoryCol).setValue(JSON.stringify(wipHistory));
+    }
+    
+    SpreadsheetApp.flush();
+    return createJsonResponse({
+      ok: true,
+      message: `Filling ${statusType} status updated successfully`,
+      lotNumber: lotNumber,
+      status: status
+    });
+  } catch (error) {
+    return createJsonResponse({ ok: false, error: `Failed to update Filling status: ${error.toString()}` });
+  }
+}
+
+function getFillingLots(spreadsheet, data) {
+  try {
+    const sheet = spreadsheet.getSheetByName('Filling');
+    if (!sheet || sheet.getLastRow() < 2) {
+      return createJsonResponse({ ok: true, lots: [], total: 0, message: 'No Filling data found' });
+    }
+    
+    const supervisorName = (data.supervisor || '').toLowerCase().trim();
+    const headers = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0];
+    const dataRange = sheet.getRange(2, 1, sheet.getLastRow() - 1, headers.length);
+    const rows = dataRange.getValues();
+    
+    const lots = rows.map((row, index) => {
+      const lot = {};
+      headers.forEach((header, colIndex) => {
+        lot[header] = row[colIndex] || '';
+      });
+      
+      let wipHistory = [];
+      let completeHistory = [];
+      const wipVal = lot['WIP Filling'] || lot['WIP'] || lot['WIP FILLING'];
+      const compVal = lot['Filling Complete'] || lot['Complete'] || lot['FILLING COMPLETE'];
+
+      if (wipVal) {
+        try {
+          const parsed = JSON.parse(wipVal);
+          wipHistory = Array.isArray(parsed) ? parsed : [parsed];
+        } catch (e) { wipHistory = []; }
+      }
+      if (compVal) {
+        try {
+          const parsed = JSON.parse(compVal);
+          completeHistory = Array.isArray(parsed) ? parsed : [parsed];
+        } catch (e) { completeHistory = []; }
+      }
+      
+      let currentStatus = 'Ready for Filling';
+      let isCompleted = false;
+      let isInProgress = false;
+      
+      if (wipHistory.length > 0 && (wipHistory[0].action === 'reopen' || (wipHistory[0].status && wipHistory[0].status.toString().toLowerCase().includes('reopen')))) {
+        currentStatus = wipHistory[0].status;
+        isCompleted = false;
+        isInProgress = false;
+      } else if (completeHistory.length > 0) {
+        const latestComplete = completeHistory[0];
+        if (latestComplete.status === 'Filling Completed' || latestComplete.status.includes('Complete')) {
+          currentStatus = 'Filling Completed';
+          isCompleted = true;
+        } else {
+          currentStatus = latestComplete.status;
+          isInProgress = true;
+        }
+      } else if (wipHistory.length > 0) {
+        currentStatus = wipHistory[0].status;
+        isInProgress = true;
+      }
+      
+      return {
+        ...lot,
+        id: index + 1,
+        currentStatus: currentStatus,
+        isCompleted: isCompleted,
+        isInProgress: isInProgress,
+        wipHistory: wipHistory,
+        completeHistory: completeHistory,
+        lastUpdated: wipHistory.length > 0 ? wipHistory[0].timestamp : 
+                    completeHistory.length > 0 ? completeHistory[0].timestamp : ''
+      };
+    });
+    
+    const filteredLots = supervisorName 
+      ? lots.filter(lot => (lot['Filling Supervisor'] || lot['Supervisor'] || '').toLowerCase().trim().includes(supervisorName))
+      : lots;
+    
+    return createJsonResponse({ ok: true, lots: filteredLots, total: filteredLots.length });
+  } catch (error) {
+    return createJsonResponse({ ok: false, error: `Failed to get Filling lots: ${error.toString()}`, lots: [] });
+  }
+}
+
+// ============ PRESS / PRESS MAN FUNCTIONS ============
+function savePressOrder(spreadsheet, data) {
+  try {
+    let sheet = spreadsheet.getSheetByName('Press') || spreadsheet.getSheetByName('PressMan');
+    if (!sheet) {
+      sheet = spreadsheet.insertSheet('Press');
+      sheet.appendRow([
+        'Timestamp', 'Lot Number', 'Garment Type', 'Fabric', 
+        'Style', 'Brand', 'Press Supervisor', 'Press Date', 'Total Pcs',
+        'WIP Press', 'Press Complete', 'Total Manpower',
+        'Process', 'REOPEN', 'REOPEN DATE', 'REOPEN FOR WHICH PROCESS'
+      ]);
+    } else {
+      let headers = sheet.getRange(1, 1, 1, Math.max(sheet.getLastColumn(), 1)).getValues()[0];
+      const requiredHeaders = [
+        'Timestamp', 'Lot Number', 'Garment Type', 'Fabric', 'Style', 'Brand', 
+        'Press Supervisor', 'Press Date', 'Total Pcs', 
+        'WIP Press', 'Press Complete', 'Total Manpower'
+      ];
+      requiredHeaders.forEach((header) => {
+        const found = headers.some(h => (h || '').toString().trim().toLowerCase() === header.toLowerCase());
+        if (!found) {
+          const nextCol = sheet.getLastColumn() + 1;
+          sheet.getRange(1, nextCol).setValue(header);
+          headers.push(header);
+        }
+      });
+    }
+    
+    const currentHeaders = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0];
+    const rowData = new Array(currentHeaders.length).fill('');
+    
+    let processVal = '';
+    if (data.process) {
+      processVal = Array.isArray(data.process) ? data.process.join(', ') : data.process;
+    } else if (data.processes) {
+      processVal = Array.isArray(data.processes) ? data.processes.join(', ') : data.processes;
+    }
+
+    const columnMapping = {
+      'Timestamp': new Date(data.timestamp || new Date().toISOString()),
+      'Lot Number': data.lotNumber || data.lotNo || '',
+      'Garment Type': data.garmentType || '',
+      'Fabric': data.fabric || '',
+      'Style': data.style || '',
+      'Brand': data.brand || '',
+      'Press Supervisor': data.pressSupervisor || data.pressManSupervisor || data.supervisor || '',
+      'Press Date': data.pressDate || data.pressManDate || data.issueDate || data.date || '',
+      'Total Pcs': parseFloat(data.totalPcs) || 0,
+      'Total Manpower': data.totalManpower || '0',
+      'Process': processVal
+    };
+    
+    currentHeaders.forEach((header, index) => {
+      const hTrim = (header || '').toString().trim();
+      const hLower = hTrim.toLowerCase();
+      if (columnMapping[hTrim] !== undefined) {
+        rowData[index] = columnMapping[hTrim];
+      } else if (hLower.includes('supervisor')) {
+        rowData[index] = columnMapping['Press Supervisor'];
+      } else if (hLower.includes('date') && !hLower.includes('reopen')) {
+        rowData[index] = columnMapping['Press Date'];
+      } else if (hLower === 'process') {
+        rowData[index] = processVal;
+      }
+    });
+    
+    sheet.appendRow(rowData);
+    const lastRow = sheet.getLastRow();
+    
+    const wipIndex = currentHeaders.findIndex(h => {
+      const l = (h || '').toString().trim().toLowerCase();
+      return l === 'wip press' || l === 'wip press man' || l === 'wip';
+    });
+    const completeIndex = currentHeaders.findIndex(h => {
+      const l = (h || '').toString().trim().toLowerCase();
+      return l === 'press complete' || l === 'press man complete' || l === 'complete';
+    });
+    
+    if (wipIndex !== -1) sheet.getRange(lastRow, wipIndex + 1).setValue('[]');
+    if (completeIndex !== -1) sheet.getRange(lastRow, completeIndex + 1).setValue('[]');
+    
+    SpreadsheetApp.flush();
+
+    return createJsonResponse({
+      ok: true,
+      message: `Press order saved to row ${lastRow}`,
+      lotNumber: data.lotNumber || data.lotNo
+    });
+    
+  } catch (error) {
+    return createJsonResponse({
+      ok: false,
+      error: `Failed to save Press order: ${error.toString()}`
+    });
+  }
+}
+
+function updatePressStatus(spreadsheet, data) {
+  try {
+    const sheet = spreadsheet.getSheetByName('Press') || spreadsheet.getSheetByName('PressMan');
+    if (!sheet) {
+      return createJsonResponse({ ok: false, error: 'Press sheet not found' });
+    }
+    
+    const headers = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0];
+    const lotNumberCol = headers.findIndex(h => (h || '').toString().trim().toLowerCase() === 'lot number') + 1;
+    let wipHistoryCol = headers.findIndex(h => {
+      const l = (h || '').toString().trim().toLowerCase();
+      return l === 'wip press' || l === 'wip press man' || l === 'wip';
+    }) + 1;
+    let completeHistoryCol = headers.findIndex(h => {
+      const l = (h || '').toString().trim().toLowerCase();
+      return l === 'press complete' || l === 'press man complete' || l === 'complete';
+    }) + 1;
+    
+    if (wipHistoryCol === 0) {
+      wipHistoryCol = sheet.getLastColumn() + 1;
+      sheet.getRange(1, wipHistoryCol).setValue('WIP Press');
+    }
+    if (completeHistoryCol === 0) {
+      completeHistoryCol = sheet.getLastColumn() + 1;
+      sheet.getRange(1, completeHistoryCol).setValue('Press Complete');
+    }
+    
+    const updatedHeaders = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0];
+    const lotNumber = data.lotNumber;
+    const lotNumbers = sheet.getRange(2, lotNumberCol, Math.max(sheet.getLastRow() - 1, 1), 1).getValues().flat();
+    const lotRowIndex = lotNumbers.findIndex(num => num.toString().trim() === lotNumber.toString().trim()) + 2;
+    
+    if (lotRowIndex < 2) {
+      return createJsonResponse({ ok: false, error: `Lot ${lotNumber} not found in Press sheet` });
+    }
+    
+    const statusType = (data.statusType || 'wip').toLowerCase();
+    const status = data.status;
+    const remarks = data.remarks || '';
+    const supervisor = data.supervisor || 'Unknown';
+    const timestamp = new Date().toISOString();
+    
+    const historyEntry = {
+      status: status,
+      remarks: remarks,
+      supervisor: supervisor,
+      timestamp: timestamp,
+      date: new Date().toLocaleDateString('en-IN'),
+      time: new Date().toLocaleTimeString('en-IN')
+    };
+    
+    if (statusType === 'wip') {
+      const existingWip = sheet.getRange(lotRowIndex, wipHistoryCol).getValue();
+      let wipHistory = [];
+      if (existingWip && existingWip.toString().trim() !== '') {
+        try {
+          wipHistory = JSON.parse(existingWip);
+          if (!Array.isArray(wipHistory)) wipHistory = [wipHistory];
+        } catch (e) {
+          wipHistory = [{status: existingWip, timestamp: timestamp}];
+        }
+      }
+      wipHistory.unshift(historyEntry);
+      sheet.getRange(lotRowIndex, wipHistoryCol).setValue(JSON.stringify(wipHistory));
+      
+    } else if (statusType === 'complete') {
+      const existingComplete = sheet.getRange(lotRowIndex, completeHistoryCol).getValue();
+      let completeHistory = [];
+      if (existingComplete && existingComplete.toString().trim() !== '') {
+        try {
+          completeHistory = JSON.parse(existingComplete);
+          if (!Array.isArray(completeHistory)) completeHistory = [completeHistory];
+        } catch (e) {
+          completeHistory = [{status: existingComplete, timestamp: timestamp}];
+        }
+      }
+      completeHistory.unshift(historyEntry);
+      sheet.getRange(lotRowIndex, completeHistoryCol).setValue(JSON.stringify(completeHistory));
+      
+      const reopenCols = ensureReopenColumns(sheet, updatedHeaders);
+      if (reopenCols.reopenCol > 0) {
+        const curReopen = sheet.getRange(lotRowIndex, reopenCols.reopenCol).getValue();
+        if (curReopen && curReopen.toString().trim().toLowerCase() === 'yes') {
+          sheet.getRange(lotRowIndex, reopenCols.reopenCol).setValue('Completed');
+        }
+      }
+    } else if (statusType === 'reopen') {
+      if (completeHistoryCol > 0) {
+        sheet.getRange(lotRowIndex, completeHistoryCol).setValue('[]');
+      }
+      const reopenProcess = data.process || data.status || 'Pending';
+      const reopenCols = ensureReopenColumns(sheet, updatedHeaders);
+      if (reopenCols.reopenCol > 0) sheet.getRange(lotRowIndex, reopenCols.reopenCol).setValue('Yes');
+      if (reopenCols.reopenDateCol > 0) sheet.getRange(lotRowIndex, reopenCols.reopenDateCol).setValue(formatDate(new Date()));
+      if (reopenCols.reopenProcessCol > 0) sheet.getRange(lotRowIndex, reopenCols.reopenProcessCol).setValue(reopenProcess);
+
+      const reopenEntry = {
+        status: `Reopened: ${reopenProcess}`,
+        action: 'reopen',
+        process: reopenProcess,
+        remarks: remarks || `Reopened for ${reopenProcess}`,
+        supervisor: supervisor,
+        timestamp: timestamp,
+        date: new Date().toLocaleDateString('en-IN'),
+        time: new Date().toLocaleTimeString('en-IN')
+      };
+      const existingWip = sheet.getRange(lotRowIndex, wipHistoryCol).getValue();
+      let wipHistory = [];
+      if (existingWip && existingWip.toString().trim() !== '') {
+        try {
+          wipHistory = JSON.parse(existingWip);
+          if (!Array.isArray(wipHistory)) wipHistory = [wipHistory];
+        } catch (e) {
+          wipHistory = [{status: existingWip, timestamp: timestamp}];
+        }
+      }
+      wipHistory.unshift(reopenEntry);
+      sheet.getRange(lotRowIndex, wipHistoryCol).setValue(JSON.stringify(wipHistory));
+    }
+    
+    SpreadsheetApp.flush();
+    return createJsonResponse({
+      ok: true,
+      message: `Press ${statusType} status updated successfully`,
+      lotNumber: lotNumber,
+      status: status
+    });
+  } catch (error) {
+    return createJsonResponse({ ok: false, error: `Failed to update Press status: ${error.toString()}` });
+  }
+}
+
+function getPressLots(spreadsheet, data) {
+  try {
+    const sheet = spreadsheet.getSheetByName('Press') || spreadsheet.getSheetByName('PressMan');
+    if (!sheet || sheet.getLastRow() < 2) {
+      return createJsonResponse({ ok: true, lots: [], total: 0, message: 'No Press data found' });
+    }
+    
+    const supervisorName = (data.supervisor || '').toLowerCase().trim();
+    const headers = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0];
+    const dataRange = sheet.getRange(2, 1, sheet.getLastRow() - 1, headers.length);
+    const rows = dataRange.getValues();
+    
+    const lots = rows.map((row, index) => {
+      const lot = {};
+      headers.forEach((header, colIndex) => {
+        lot[header] = row[colIndex] || '';
+      });
+      
+      let wipHistory = [];
+      let completeHistory = [];
+      const wipVal = lot['WIP Press'] || lot['WIP Press Man'] || lot['WIP Iron'] || lot['WIP'] || lot['WIP PRESS'];
+      const compVal = lot['Press Complete'] || lot['Press Man Complete'] || lot['Iron Complete'] || lot['Complete'] || lot['PRESS COMPLETE'];
+
+      if (wipVal) {
+        try {
+          const parsed = JSON.parse(wipVal);
+          wipHistory = Array.isArray(parsed) ? parsed : [parsed];
+        } catch (e) { wipHistory = []; }
+      }
+      if (compVal) {
+        try {
+          const parsed = JSON.parse(compVal);
+          completeHistory = Array.isArray(parsed) ? parsed : [parsed];
+        } catch (e) { completeHistory = []; }
+      }
+      
+      let currentStatus = 'Ready for Press';
+      let isCompleted = false;
+      let isInProgress = false;
+      
+      if (wipHistory.length > 0 && (wipHistory[0].action === 'reopen' || (wipHistory[0].status && wipHistory[0].status.toString().toLowerCase().includes('reopen')))) {
+        currentStatus = wipHistory[0].status;
+        isCompleted = false;
+        isInProgress = false;
+      } else if (completeHistory.length > 0) {
+        const latestComplete = completeHistory[0];
+        if (latestComplete.status === 'Press Completed' || latestComplete.status.includes('Complete')) {
+          currentStatus = 'Press Completed';
+          isCompleted = true;
+        } else {
+          currentStatus = latestComplete.status;
+          isInProgress = true;
+        }
+      } else if (wipHistory.length > 0) {
+        currentStatus = wipHistory[0].status;
+        isInProgress = true;
+      }
+      
+      return {
+        ...lot,
+        id: index + 1,
+        currentStatus: currentStatus,
+        isCompleted: isCompleted,
+        isInProgress: isInProgress,
+        wipHistory: wipHistory,
+        completeHistory: completeHistory,
+        lastUpdated: wipHistory.length > 0 ? wipHistory[0].timestamp : 
+                    completeHistory.length > 0 ? completeHistory[0].timestamp : ''
+      };
+    });
+    
+    const filteredLots = supervisorName 
+      ? lots.filter(lot => (lot['Press Supervisor'] || lot['Press Man Supervisor'] || lot['Supervisor'] || '').toLowerCase().trim().includes(supervisorName))
+      : lots;
+    
+    return createJsonResponse({ ok: true, lots: filteredLots, total: filteredLots.length });
+  } catch (error) {
+    return createJsonResponse({ ok: false, error: `Failed to get Press lots: ${error.toString()}`, lots: [] });
+  }
+}
+
+// Aliases for Press / PressMan
+function savePressManOrder(spreadsheet, data) { return savePressOrder(spreadsheet, data); }
+function updatePressManStatus(spreadsheet, data) { return updatePressStatus(spreadsheet, data); }
+function getPressManLots(spreadsheet, data) { return getPressLots(spreadsheet, data); }
+
 function getAllDepartmentsData(spreadsheet, data) {
   try {
     const departments = {};
@@ -3884,6 +5346,40 @@ function getAllDepartmentsData(spreadsheet, data) {
         }
       }
     } catch (e) {}
+
+    try {
+      const fillingSheet = spreadsheet.getSheetByName('Filling');
+      if (fillingSheet && fillingSheet.getLastRow() > 1) {
+        const fillingData = getFillingLots(spreadsheet, {});
+        const parsed = JSON.parse(fillingData.getContent());
+        if (parsed.ok) {
+          departments.filling = parsed.lots;
+          summary.totalLots += parsed.total;
+          parsed.lots.forEach(lot => {
+            if (lot.isCompleted) summary.completedLots++;
+            else if (lot.isInProgress) summary.inProgressLots++;
+            else summary.pendingLots++;
+          });
+        }
+      }
+    } catch (e) {}
+
+    try {
+      const pressSheet = spreadsheet.getSheetByName('Press') || spreadsheet.getSheetByName('PressMan');
+      if (pressSheet && pressSheet.getLastRow() > 1) {
+        const pressData = getPressLots(spreadsheet, {});
+        const parsed = JSON.parse(pressData.getContent());
+        if (parsed.ok) {
+          departments.press = parsed.lots;
+          summary.totalLots += parsed.total;
+          parsed.lots.forEach(lot => {
+            if (lot.isCompleted) summary.completedLots++;
+            else if (lot.isInProgress) summary.inProgressLots++;
+            else summary.pendingLots++;
+          });
+        }
+      }
+    } catch (e) {}
     
     return createJsonResponse({
       ok: true,
@@ -3934,6 +5430,11 @@ function doPost(e) {
       case 'submitJaybirPrintingOrder':
       case 'submitJaybirPrintOrder':
         return saveJaybirPrintingOrder(spreadsheet, data);
+      case 'submitFillingOrder':
+        return saveFillingOrder(spreadsheet, data);
+      case 'submitPressOrder':
+      case 'submitPressManOrder':
+        return savePressOrder(spreadsheet, data);
 
       // Status updates
       case 'updateJaybirPrintingStatus':
@@ -3962,6 +5463,11 @@ function doPost(e) {
         return updateWashingStatus(spreadsheet, data);
       case 'updateBoneStatus':
         return updateBoneStatus(spreadsheet, data);
+      case 'updateFillingStatus':
+        return updateFillingStatus(spreadsheet, data);
+      case 'updatePressStatus':
+      case 'updatePressManStatus':
+        return updatePressStatus(spreadsheet, data);
 
       case 'updateStatus':
       case 'updateLotStatus':
@@ -3974,6 +5480,8 @@ function doPost(e) {
         if (dept.includes('bone')) return updateBoneStatus(spreadsheet, data);
         if (dept.includes('overlock')) return updateOverlockStatus(spreadsheet, data);
         if (dept.includes('fold')) return updateFoldingStatus(spreadsheet, data);
+        if (dept.includes('fill')) return updateFillingStatus(spreadsheet, data);
+        if (dept.includes('press') || dept.includes('iron')) return updatePressStatus(spreadsheet, data);
         return updateKajButtonStatus(spreadsheet, data);
 
       case 'bulkUpdate':

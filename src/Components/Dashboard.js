@@ -188,43 +188,128 @@ const DEPARTMENTS = [
       'Other'
     ],
     completeOptions: ['Jaybir Embroidery Complete', 'Embroidery Completed', 'Other']
+  },
+  {
+    id: 'filling',
+    name: 'Filling',
+    sheetName: 'Filling',
+    shortName: 'Filling',
+    updateAction: 'updateFillingStatus',
+    supervisorKeys: ['Filling Supervisor', 'Supervisor', 'FILLING SUPERVISOR'],
+    dateKeys: ['Filling Date', 'Date', 'FILLING DATE'],
+    wipKeys: ['WIP Filling', 'WIP', 'WIP FILLING'],
+    completeKeys: ['Filling Complete', 'Complete', 'FILLING COMPLETE'],
+    wipOptions: [
+      'FILLING WIP',
+      'FILLING RUNNING',
+      'POLY FILLING',
+      'DOWN FILLING',
+      'FIBER FILLING',
+      'QUILTING FILLING',
+      'BLOWING',
+      'Other'
+    ],
+    completeOptions: ['Filling Completed', 'Other']
+  },
+  {
+    id: 'press',
+    name: 'Press',
+    sheetName: 'Press',
+    shortName: 'Press',
+    updateAction: 'updatePressStatus',
+    supervisorKeys: ['Press Supervisor', 'Press Man Supervisor', 'Supervisor', 'PRESS SUPERVISOR'],
+    dateKeys: ['Press Date', 'Press Man Date', 'Date', 'PRESS DATE'],
+    wipKeys: ['WIP Press', 'WIP Press Man', 'WIP Iron', 'WIP', 'WIP PRESS'],
+    completeKeys: ['Press Complete', 'Press Man Complete', 'Iron Complete', 'Complete', 'PRESS COMPLETE'],
+    wipOptions: [
+      'PRESS WIP',
+      'STEAM PRESS',
+      'IRONING RUNNING',
+      'FINAL PRESS',
+      'FORM FINISHER',
+      'UNDER PRESS',
+      'Other'
+    ],
+    completeOptions: ['Press Completed', 'Other']
   }
 ];
 
 // Helper to determine the default department matching the user's role/profile
 const getDeptIdForUser = (userObj) => {
-  if (!userObj || !userObj.department) return 'feedup';
-  const dept = userObj.department.toLowerCase().trim();
-  if (dept.includes('feed')) return 'feedup';
-  if (dept.includes('elastic')) return 'elastic';
-  if (dept.includes('bone')) return 'bone';
-  if (dept.includes('wash')) return 'washing';
-  if (dept.includes('fold')) return 'folding';
-  if (dept.includes('overlock') || dept.includes('ovelock')) return 'overlock';
-  if (dept.includes('print')) return 'printing';
-  if (dept.includes('embroid')) return 'embroidery';
-  if (dept.includes('kaj') || dept.includes('button')) return 'kajbutton';
+  if (!userObj) return 'press';
+  const dept = (userObj.department || '').toLowerCase().trim();
+  const name = (userObj.name || '').toLowerCase().trim();
+  const username = (userObj.username || '').toLowerCase().trim();
+
+  // 1. Check Press / Iron
+  if (dept.includes('press') || dept.includes('iron') || name.includes('press') || name.includes('iron') || username.includes('press')) {
+    return 'press';
+  }
+  // 2. Check Filling
+  if (dept.includes('fill') || name.includes('fill') || username.includes('fill')) {
+    return 'filling';
+  }
+  // 3. Check Feed Up
+  if (dept.includes('feed') || name.includes('feed') || name.includes('mohan') || username.includes('feed')) {
+    return 'feedup';
+  }
+  // 4. Check Elastic
+  if (dept.includes('elastic') || name.includes('elastic') || username.includes('elastic')) {
+    return 'elastic';
+  }
+  // 5. Check Bone
+  if (dept.includes('bone') || name.includes('bone') || name.includes('ramesh') || username.includes('bone')) {
+    return 'bone';
+  }
+  // 6. Check Washing
+  if (dept.includes('wash') || name.includes('wash') || name.includes('sanjay') || username.includes('wash')) {
+    return 'washing';
+  }
+  // 7. Check Folding
+  if (dept.includes('fold') || name.includes('fold') || username.includes('fold')) {
+    return 'folding';
+  }
+  // 8. Check Overlock
+  if (dept.includes('overlock') || dept.includes('ovelock') || name.includes('overlock') || username.includes('overlock')) {
+    return 'overlock';
+  }
+  // 9. Check Printing
+  if (dept.includes('print') || name.includes('print') || username.includes('print')) {
+    return 'printing';
+  }
+  // 10. Check Embroidery
+  if (dept.includes('embroid') || name.includes('embroid') || username.includes('embroid')) {
+    return 'embroidery';
+  }
+  // 11. Check KajButton / Jaybir
+  if (dept.includes('kaj') || dept.includes('button') || name.includes('jaybir') || username.includes('jaybir')) {
+    return 'kajbutton';
+  }
+
   const match = DEPARTMENTS.find(d =>
     d.id === dept ||
     d.name.toLowerCase().includes(dept) ||
     d.shortName.toLowerCase() === dept
   );
-  return match ? match.id : 'feedup';
+  return match ? match.id : (DEPARTMENTS.find(d => d.id === 'press')?.id || 'feedup');
 };
 
 // Helper to determine the accessible departments based on user identity
-// Jaybir -> KajButton, Jaybir Printing, Jaybir Embroidery
+// Press -> Only Press
+// Filling -> Only Filling
 // Feed Up -> Feed Up
 // Elastic -> Only Elastic
 // Bone -> Only Bone
 // Washing -> Only Washing
 // Folding -> Only Folding
+// Jaybir -> KajButton, Jaybir Printing, Jaybir Embroidery
 const getAccessibleDepartments = (userObj) => {
   if (!userObj) return DEPARTMENTS;
 
   const userName = (userObj.name || '').toLowerCase().trim();
   const userDept = (userObj.department || '').toLowerCase().trim();
   const userRole = (userObj.role || '').toLowerCase().trim();
+  const username = (userObj.username || '').toLowerCase().trim();
 
   // Admin / Manager / All departments
   if (
@@ -237,46 +322,64 @@ const getAccessibleDepartments = (userObj) => {
     return DEPARTMENTS;
   }
 
+  // Press Department Supervisor (only Press lots)
+  if (userDept.includes('press') || userDept.includes('iron') || userName.includes('press') || userName.includes('iron') || username.includes('press')) {
+    return DEPARTMENTS.filter(d => d.id === 'press');
+  }
+
+  // Filling Department Supervisor (only Filling lots)
+  if (userDept.includes('fill') || userName.includes('fill') || username.includes('fill')) {
+    return DEPARTMENTS.filter(d => d.id === 'filling');
+  }
+
   // Jaybir manages KajButton, Jaybir Printing, and Jaybir Embroidery
   if (
     userName.includes('jaybir') ||
     userDept.includes('jaybir') ||
-    userDept.includes('kaj') ||
-    userDept.includes('button') ||
-    userDept.includes('print') ||
-    userDept.includes('embroid')
+    username.includes('jaybir') ||
+    ((userDept.includes('kaj') || userDept.includes('button')) && !userDept.includes('feed'))
   ) {
     return DEPARTMENTS.filter(d => ['kajbutton', 'printing', 'embroidery'].includes(d.id));
   }
 
   // Feed Up Department Supervisor (only Feed Up lots)
-  if (userDept.includes('feed') || userName.includes('feed') || userName.includes('mohan')) {
+  if (userDept.includes('feed') || userName.includes('feed') || userName.includes('mohan') || username.includes('feed')) {
     return DEPARTMENTS.filter(d => d.id === 'feedup');
   }
 
   // Elastic Department Supervisor (only Elastic lots)
-  if (userDept.includes('elastic') || userName.includes('elastic')) {
+  if (userDept.includes('elastic') || userName.includes('elastic') || username.includes('elastic')) {
     return DEPARTMENTS.filter(d => d.id === 'elastic');
   }
 
   // Bone Department Supervisor (only Bone lots)
-  if (userDept.includes('bone') || userName.includes('bone')) {
+  if (userDept.includes('bone') || userName.includes('bone') || userName.includes('ramesh') || username.includes('bone')) {
     return DEPARTMENTS.filter(d => d.id === 'bone');
   }
 
   // Washing Department Supervisor (only Washing lots)
-  if (userDept.includes('wash') || userName.includes('wash')) {
+  if (userDept.includes('wash') || userName.includes('wash') || userName.includes('sanjay') || username.includes('wash')) {
     return DEPARTMENTS.filter(d => d.id === 'washing');
   }
 
   // Folding Department Supervisor (only Folding lots)
-  if (userDept.includes('fold') || userName.includes('fold')) {
+  if (userDept.includes('fold') || userName.includes('fold') || username.includes('fold')) {
     return DEPARTMENTS.filter(d => d.id === 'folding');
   }
 
   // Overlock Department Supervisor (only Overlock lots)
-  if (userDept.includes('overlock') || userDept.includes('ovelock') || userName.includes('overlock')) {
+  if (userDept.includes('overlock') || userDept.includes('ovelock') || userName.includes('overlock') || username.includes('overlock')) {
     return DEPARTMENTS.filter(d => d.id === 'overlock');
+  }
+
+  // Printing Supervisor
+  if (userDept.includes('print') || userName.includes('print') || username.includes('print')) {
+    return DEPARTMENTS.filter(d => d.id === 'printing');
+  }
+
+  // Embroidery Supervisor
+  if (userDept.includes('embroid') || userName.includes('embroid') || username.includes('embroid')) {
+    return DEPARTMENTS.filter(d => d.id === 'embroidery');
   }
 
   // Generic match
@@ -328,6 +431,22 @@ const renderDeptIcon = (deptId, color = '#2563EB') => {
           <polygon points="12 2 2 7 12 12 22 7 12 2" />
           <polyline points="2 17 12 22 22 17" />
           <polyline points="2 12 12 17 22 12" />
+        </svg>
+      );
+    case 'filling':
+      return (
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+          <path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z" />
+          <polyline points="3.27 6.96 12 12.01 20.73 6.96" />
+          <line x1="12" y1="22.08" x2="12" y2="12" />
+        </svg>
+      );
+    case 'press':
+      return (
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+          <path d="M4 18h16a1 1 0 0 0 1-1l-2-7H5L3 17a1 1 0 0 0 1 1z" />
+          <path d="M6 10V6a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2v4" />
+          <line x1="8" y1="14" x2="16" y2="14" />
         </svg>
       );
     case 'overlock':

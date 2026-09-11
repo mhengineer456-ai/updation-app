@@ -58,7 +58,7 @@ function App() {
     const ALLOWED_LOCATION = {
         latitude: 30.9544768,  // Your organization's latitude
         longitude: 75.8577128, // Your organization's longitude
-        radius: 70, // 70 meters radius around your organization
+        radius: 500, // 500 meters radius around your organization
         organizationName: "Your Organization",
         address: "Your Organization Address, Punjab, India"
     };
