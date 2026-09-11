@@ -30,7 +30,7 @@ const SplashScreen = ({ onLoadingComplete }) => {
 
   const getStatusText = () => {
     if (progress < 40) return 'Connecting to operations...';
-    if (progress < 80) return 'Loading supervisor lots...';
+    if (progress < 80) return 'Loading department lots...';
     return 'Ready';
   };
 
@@ -39,28 +39,23 @@ const SplashScreen = ({ onLoadingComplete }) => {
       <div style={styles.card}>
         {/* Brand Icon SVG */}
         <div style={styles.iconContainer}>
-          <svg width="34" height="34" viewBox="0 0 24 24" fill="none">
+          <svg width="36" height="36" viewBox="0 0 24 24" fill="none">
             <path
-              d="M12 2L15 8L21 9L17 14L18 20L12 17L6 20L7 14L3 9L9 8L12 2Z"
-              fill="#2563EB"
-              opacity="0.1"
-            />
-            <circle cx="12" cy="12" r="9" stroke="#2563EB" strokeWidth="2" />
-            <path
-              d="M8 12C8 9.79086 9.79086 8 12 8C14.2091 8 16 9.79086 16 12C16 14.2091 14.2091 16 12 16"
-              stroke="#0F172A"
-              strokeWidth="2"
+              d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"
+              stroke="#2563EB"
+              strokeWidth="2.2"
               strokeLinecap="round"
+              strokeLinejoin="round"
             />
-            <circle cx="12" cy="12" r="2" fill="#2563EB" />
+            <circle cx="12" cy="12" r="2.5" fill="#2563EB" opacity="0.85" />
           </svg>
         </div>
 
         {/* Title */}
         <div style={styles.brandBlock}>
           <span style={styles.tagline}>MANUFACTURING OPERATIONS</span>
-          <h1 style={styles.title}>KajButton</h1>
-          <p style={styles.subtitle}>Daily Supervisor Portal</p>
+          <h1 style={styles.title}>Daily Updation</h1>
+          <p style={styles.subtitle}>Supervisor Floor & WIP Portal</p>
         </div>
 
         {/* Progress */}
